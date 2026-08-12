@@ -68,6 +68,22 @@ def passes_filters(job: Job, filters: dict) -> bool:
         if loc.lower() in location:
             return False
 
+    # The geography gate.
+    #
+    # A job is only useful if it is either (a) where you live, or (b) actually
+    # remote. LinkedIn's guest endpoint ignores its own remote filter (f_WT)
+    # and the job cards carry no work-type field, so an on-site role in Malmo
+    # is indistinguishable from a remote one at the source. This gate is the
+    # backstop: anything outside your home country must say remote somewhere
+    # in its location, or it gets dropped.
+    home = [h.lower() for h in filters.get("home_locations") or []]
+    markers = [m.lower() for m in filters.get("remote_markers") or []]
+    if home or markers:
+        at_home = any(h in location for h in home)
+        is_remote = any(m in location for m in markers)
+        if not (at_home or is_remote):
+            return False
+
     bad = [w.lower() for w in filters.get("title_must_not_include") or []]
     if any(w in title for w in bad):
         return False
@@ -99,16 +115,17 @@ def collect(cfg: dict) -> list[Job]:
     jobs: list[Job] = []
 
     for s in cfg.get("searches", []):
-        kw, loc = s.get("keywords", ""), s.get("location", "Worldwide")
+        kw = s.get("keywords", "")
+        loc = s.get("location", "")
         found = fetch_linkedin(
             kw,
             loc,
-            remote=bool(s.get("remote")),
+            geo_id=s.get("geo_id"),
             lookback_seconds=lookback,
             exp=s.get("exp"),
             log=log,
         )
-        log(f"  LinkedIn [{kw or 'any'} @ {loc}] -> {len(found)}")
+        log(f"  LinkedIn [{kw or 'any'} @ {loc or s.get('geo_id')}] -> {len(found)}")
         jobs.extend(found)
 
     extra = cfg.get("extra_sources") or {}
@@ -208,19 +225,26 @@ def handle_commands(tg: Telegram, store: Store, cfg: dict) -> None:
                 tg.send(chat_id, "Usage: <code>/search flutter egypt</code>")
                 continue
             tg.send(chat_id, f"🔎 Searching <b>{arg}</b> …")
-            # Last word is treated as the location if it looks like one.
+            # Last word is treated as a country if we know its geoId.
+            # geoIds are used rather than location strings because an
+            # unrecognised string makes LinkedIn geolocate the runner's IP.
+            GEO = {
+                "egypt": 106155005,
+                "uae": 104305776,
+                "saudi": 100459316,
+                "germany": 101282230,
+                "uk": 101165590,
+                "usa": 103644278,
+            }
             words = arg.split()
-            known_locs = {"egypt", "remote", "worldwide", "cairo", "uae",
-                          "dubai", "saudi", "germany", "usa", "uk"}
-            if len(words) > 1 and words[-1].lower() in known_locs:
-                kw, loc = " ".join(words[:-1]), words[-1]
-            else:
-                kw, loc = arg, "Egypt"
-            remote = loc.lower() in ("remote", "worldwide")
+            geo = GEO["egypt"]
+            kw = arg
+            if len(words) > 1 and words[-1].lower() in GEO:
+                kw = " ".join(words[:-1])
+                geo = GEO[words[-1].lower()]
             hits = fetch_linkedin(
                 kw,
-                "Worldwide" if remote else loc,
-                remote=remote,
+                geo_id=geo,
                 lookback_seconds=7 * 86400,
                 pages=1,
                 log=log,
