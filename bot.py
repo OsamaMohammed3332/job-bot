@@ -242,22 +242,40 @@ def run_once(tg: Telegram, store: Store, cfg: dict, channel: str | None) -> int:
     delay = cfg.get("send_delay", 1.2)
     posted = 0
 
+    channel_ok = True
+
     for job in fresh[:cap]:
         text = format_job(job)
+        delivered = False
 
-        if channel:
-            tg.send(channel, text)
+        if channel and channel_ok:
+            if tg.send(channel, text) is None:
+                # Almost always a bad CHANNEL_ID or the bot isn't an admin.
+                # Stop hammering it for the rest of this run.
+                channel_ok = False
+                log("  ! channel send failed — check CHANNEL_ID and that "
+                    "the bot is an admin with Post Messages")
+            else:
+                delivered = True
             time.sleep(delay)
 
         for chat_id, sub in list(store.subscribers().items()):
             if matches_subscriber(job, sub):
-                tg.send(chat_id, text)
+                if tg.send(chat_id, text) is not None:
+                    delivered = True
                 time.sleep(delay)
 
-        store.mark_seen(job.id)
-        posted += 1
+        # Only burn the job id once it actually reached someone. Otherwise a
+        # misconfigured run would silently swallow every job it found.
+        if delivered:
+            store.mark_seen(job.id)
+            posted += 1
 
-    # Mark the overflow as seen too, otherwise the next run posts stale jobs.
+    if not channel_ok:
+        log("Delivery failed — those jobs were NOT marked seen, "
+            "so they'll be retried on the next run.")
+
+    # Mark the overflow as seen, otherwise the next run posts stale jobs.
     for job in fresh[cap:]:
         store.mark_seen(job.id)
 
