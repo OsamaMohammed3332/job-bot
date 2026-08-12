@@ -17,7 +17,7 @@ import random
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
 import requests
@@ -108,6 +108,37 @@ def _job_id_from_card(card) -> str | None:
     return None
 
 
+_REL_RE = re.compile(
+    r"(\d+)\s*(minute|hour|day|week|month|year)s?\s+ago", re.IGNORECASE
+)
+_REL_SECONDS = {
+    "minute": 60,
+    "hour": 3600,
+    "day": 86400,
+    "week": 604800,
+    "month": 2592000,
+    "year": 31536000,
+}
+
+
+def parse_relative_time(text: str | None) -> datetime | None:
+    """Turn LinkedIn's '53 minutes ago' into a real timestamp.
+
+    This is the ONLY accurate source of posting time on a guest card. The
+    <time datetime="..."> attribute is date-only (no clock time), so reading
+    it gives midnight UTC and makes every job posted today look hours old.
+    Also handles 'Reposted 2 hours ago'.
+    """
+    if not text:
+        return None
+    m = _REL_RE.search(text)
+    if not m:
+        return None
+    n = int(m.group(1))
+    unit = m.group(2).lower()
+    return datetime.now(timezone.utc) - timedelta(seconds=n * _REL_SECONDS[unit])
+
+
 def parse_guest_html(html: str) -> list[Job]:
     """Parse the HTML fragment returned by the guest endpoint.
 
@@ -138,13 +169,26 @@ def parse_guest_html(html: str) -> list[Job]:
 
         posted_at = None
         time_el = card.find("time")
-        if time_el and time_el.get("datetime"):
-            try:
-                posted_at = datetime.fromisoformat(
-                    time_el["datetime"]
-                ).replace(tzinfo=timezone.utc)
-            except ValueError:
-                pass
+        if time_el:
+            # Prefer the visible "53 minutes ago" text — it's the only
+            # source with clock precision.
+            posted_at = parse_relative_time(time_el.get_text(strip=True))
+
+            if posted_at is None and time_el.get("datetime"):
+                try:
+                    d = datetime.fromisoformat(time_el["datetime"]).replace(
+                        tzinfo=timezone.utc
+                    )
+                except ValueError:
+                    d = None
+                if d is not None:
+                    # A date-only value for TODAY would render as midnight,
+                    # i.e. "14 hours ago" for a job posted 5 minutes ago.
+                    # Rather than lie, report the age as unknown.
+                    if d.date() == datetime.now(timezone.utc).date():
+                        posted_at = None
+                    else:
+                        posted_at = d
 
         jobs.append(
             Job(
