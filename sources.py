@@ -206,29 +206,40 @@ def parse_guest_html(html: str) -> list[Job]:
 
 def fetch_linkedin(
     keywords: str,
-    location: str,
+    location: str = "",
     *,
-    remote: bool = False,
+    geo_id: str | int | None = None,
     lookback_seconds: int = 7200,
     exp: Iterable[int] | None = None,
     pages: int = 2,
     log=print,
 ) -> list[Job]:
     """Query the LinkedIn guest endpoint. Returns [] on rate-limit rather
-    than raising, so one bad query never kills the whole run."""
+    than raising, so one bad query never kills the whole run.
+
+    ALWAYS pass geo_id when you can. A plain location string that LinkedIn
+    does not recognise (notably "Worldwide") is silently discarded and the
+    endpoint falls back to geolocating the CALLER'S IP — which on a GitHub
+    runner means US jobs, not what you asked for.
+
+    Note there is deliberately no remote parameter. The guest endpoint
+    accepts f_WT=2 but ignores it: identical result sets come back with and
+    without it (verified). Remote filtering has to happen elsewhere.
+    """
     sess = _session()
     out: list[Job] = []
 
     for page in range(pages):
         params = {
             "keywords": keywords,
-            "location": location,
             "f_TPR": f"r{lookback_seconds}",
             "sortBy": "DD",           # date descending = newest first
             "start": page * 10,
         }
-        if remote:
-            params["f_WT"] = "2"      # 2 = Remote
+        if geo_id:
+            params["geoId"] = str(geo_id)
+        else:
+            params["location"] = location
         if exp:
             params["f_E"] = ",".join(str(e) for e in exp)
 
