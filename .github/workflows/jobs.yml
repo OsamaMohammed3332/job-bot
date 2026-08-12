@@ -1,0 +1,53 @@
+name: Job Bot
+
+on:
+  schedule:
+    # Every 10 minutes. GitHub's minimum is 5, but scheduled runs on the
+    # free tier get queued during peak hours anyway — 10 is more honest
+    # and less likely to get your runner IP rate-limited by LinkedIn.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:        # lets you trigger a run manually from the UI
+
+# Only one run at a time, otherwise two runs race on state.json
+# and you get duplicate posts.
+concurrency:
+  group: job-bot
+  cancel-in-progress: false
+
+permissions:
+  contents: write           # needed to commit state.json back
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Fetch and post jobs
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+        run: python bot.py once
+
+      - name: Persist state
+        run: |
+          git config user.name  "job-bot"
+          git config user.email "job-bot@users.noreply.github.com"
+          git add state.json
+          git diff --staged --quiet && echo "no changes" && exit 0
+          git commit -m "state: $(date -u +%Y-%m-%dT%H:%MZ)"
+          # Another run may have pushed while we worked — rebase and retry.
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && \
+            git push && exit 0
+            sleep 5
+          done
+          echo "could not push state" >&2
