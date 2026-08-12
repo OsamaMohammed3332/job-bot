@@ -1,0 +1,101 @@
+# ============================================================
+#  Job bot configuration  —  Flutter / mobile, mid + senior
+#  Egypt + remote worldwide
+# ============================================================
+
+# How far back to look on each run.
+#   3600 = last hour, 7200 = 2 hours, 86400 = 24 hours
+# Keep this LARGER than your cron interval so nothing slips through
+# when a GitHub Actions run fires late.
+lookback_seconds: 7200
+
+# Max jobs posted per run. Safety valve.
+max_posts_per_run: 25
+
+# Seconds between Telegram sends (avoids 429 rate limits)
+send_delay: 1.2
+
+# ------------------------------------------------------------
+# SEARCHES
+#
+# Tuned for Flutter / mobile engineering at mid-level and senior.
+#   exp: 3 = associate, 4 = mid-senior, 5 = director
+#   (1 = internship, 2 = entry — deliberately left out)
+#
+# Each search costs ~8 seconds of runtime. Add more only if you
+# want them; a shorter list also gets rate-limited less often.
+# ------------------------------------------------------------
+searches:
+  # ---- Egypt ----
+  - { keywords: "flutter",              location: "Egypt", remote: false, exp: [3, 4, 5] }
+  - { keywords: "flutter developer",    location: "Egypt", remote: false, exp: [3, 4, 5] }
+  - { keywords: "mobile developer",     location: "Egypt", remote: false, exp: [3, 4, 5] }
+  - { keywords: "mobile engineer",      location: "Egypt", remote: false, exp: [3, 4, 5] }
+  - { keywords: "android developer",    location: "Egypt", remote: false, exp: [3, 4, 5] }
+  - { keywords: "ios developer",        location: "Egypt", remote: false, exp: [3, 4, 5] }
+  - { keywords: "react native",         location: "Egypt", remote: false, exp: [3, 4, 5] }
+  - { keywords: "dart",                 location: "Egypt", remote: false, exp: [3, 4, 5] }
+
+  # ---- Remote, worldwide ----
+  - { keywords: "flutter",           location: "Worldwide", remote: true, exp: [3, 4, 5] }
+  - { keywords: "flutter developer", location: "Worldwide", remote: true, exp: [3, 4, 5] }
+  - { keywords: "mobile developer",  location: "Worldwide", remote: true, exp: [3, 4, 5] }
+  - { keywords: "mobile engineer",   location: "Worldwide", remote: true, exp: [3, 4, 5] }
+  - { keywords: "react native",      location: "Worldwide", remote: true, exp: [3, 4, 5] }
+  - { keywords: "flutter",           location: "European Union", remote: true, exp: [3, 4, 5] }
+  - { keywords: "flutter",           location: "United States",  remote: true, exp: [3, 4, 5] }
+
+# ------------------------------------------------------------
+# FILTERS applied to every result before posting.
+#
+# This is what keeps the extra remote-job APIs (Remotive, RemoteOK,
+# Arbeitnow) from flooding you with backend and data roles — they
+# return all of software dev, and this list narrows it to mobile.
+# ------------------------------------------------------------
+filters:
+  # Title must contain at least one of these (case-insensitive).
+  title_must_include:
+    - flutter
+    - dart
+    - mobile
+    - android
+    - ios
+    - swift
+    - kotlin
+    - react native
+    - react-native
+    - cross-platform
+    - cross platform
+    - app developer
+    - application developer
+    - apps engineer
+
+  # Drop the job if the title contains any of these.
+  # Remove "junior" / "intern" here if you ever want entry-level too.
+  title_must_not_include:
+    - intern
+    - internship
+    - trainee
+    - junior
+    - fresh grad
+    - graduate program
+    - sales
+    - recruiter
+    - "talent acquisition"
+    - "customer service"
+    - accountant
+    - teacher
+    - instructor
+    - "business development"
+
+  # Drop jobs from these companies (spam agencies, etc.)
+  blocked_companies: []
+
+# ------------------------------------------------------------
+# EXTRA SOURCES — free public APIs, no key needed.
+# These add remote jobs that never show up on LinkedIn.
+# ------------------------------------------------------------
+extra_sources:
+  remotive: true    # remotive.com  — curated remote jobs
+  remoteok: true    # remoteok.com  — remote tech jobs
+  arbeitnow: true   # arbeitnow.com — EU + remote jobs
