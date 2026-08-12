@@ -57,16 +57,36 @@ def load_config() -> dict:
 
 def passes_filters(job: Job, filters: dict) -> bool:
     title = job.title.lower()
+    location = job.location.lower()
 
     blocked = [c.lower() for c in filters.get("blocked_companies") or []]
     if any(b in job.company.lower() for b in blocked):
         return False
 
+    # Drop roles advertised for markets you don't want to be hired into.
+    for loc in filters.get("blocked_locations") or []:
+        if loc.lower() in location:
+            return False
+
     bad = [w.lower() for w in filters.get("title_must_not_include") or []]
     if any(w in title for w in bad):
         return False
 
-    good = [w.lower() for w in filters.get("title_must_include") or []]
+    # Two different include lists, because the sources differ in quality:
+    #
+    #   LinkedIn results already came from a Flutter/mobile-specific search
+    #   query, so the title itself doesn't have to prove relevance. Using the
+    #   strict list here would throw away Arabic-language postings like
+    #   "مهندس برمجيات" that are genuinely Flutter roles.
+    #
+    #   The remote-job APIs return all of software dev, so those need the
+    #   strict mobile-only list.
+    if job.source == "LinkedIn":
+        good = filters.get("title_must_include_linkedin") or []
+    else:
+        good = filters.get("title_must_include") or []
+
+    good = [w.lower() for w in good]
     if good and not any(w in title for w in good):
         return False
 
