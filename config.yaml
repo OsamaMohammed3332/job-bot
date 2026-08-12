@@ -1,0 +1,130 @@
+# ============================================================
+#  Job bot configuration
+#  Edit this file to control what jobs you get.
+# ============================================================
+
+# How far back to look on each run. LinkedIn supports:
+#   3600 = last hour, 7200 = 2 hours, 86400 = 24 hours
+# Keep this comfortably LARGER than your cron interval so nothing
+# slips through the cracks when a run is delayed.
+lookback_seconds: 7200
+
+# Max jobs posted per run. Safety valve so a bad config
+# doesn't dump 300 messages into your channel.
+max_posts_per_run: 25
+
+# Seconds to sleep between Telegram sends (avoid 429 rate limits)
+send_delay: 1.2
+
+# ------------------------------------------------------------
+# SEARCHES
+#
+# COST NOTE: each search = ~2 HTTP requests + polite delays, so roughly
+# 8 seconds of runtime. The 20 searches below make each run take ~3-4
+# minutes. That's fine on a PUBLIC GitHub repo (unlimited Actions
+# minutes) but will blow through a private repo's 2,000 min/month.
+# Trimming to the 6-8 searches you actually care about also makes
+# LinkedIn far less likely to rate-limit you.
+#
+# Each entry is one LinkedIn query. The bot runs them all and
+# merges + dedupes the results.
+#
+#   keywords : search text ("" = everything)
+#   location : country/city name as LinkedIn spells it
+#   remote   : true  -> only remote roles (LinkedIn f_WT=2)
+#              false -> any work type
+#   exp      : optional list of experience levels
+#              1=internship 2=entry 3=associate
+#              4=mid-senior 5=director 6=executive
+# ------------------------------------------------------------
+searches:
+  # ---- Egypt ----
+  - { keywords: "software engineer",  location: "Egypt", remote: false }
+  - { keywords: "backend developer",  location: "Egypt", remote: false }
+  - { keywords: "frontend developer", location: "Egypt", remote: false }
+  - { keywords: "flutter",            location: "Egypt", remote: false }
+  - { keywords: "react",              location: "Egypt", remote: false }
+  - { keywords: "node.js",            location: "Egypt", remote: false }
+  - { keywords: "python developer",   location: "Egypt", remote: false }
+  - { keywords: "data engineer",      location: "Egypt", remote: false }
+  - { keywords: "devops",             location: "Egypt", remote: false }
+  - { keywords: "mobile developer",   location: "Egypt", remote: false }
+  - { keywords: "qa engineer",        location: "Egypt", remote: false }
+
+  # ---- Remote, worldwide ----
+  - { keywords: "software engineer",  location: "Worldwide",     remote: true }
+  - { keywords: "backend developer",  location: "Worldwide",     remote: true }
+  - { keywords: "frontend developer", location: "Worldwide",     remote: true }
+  - { keywords: "flutter",            location: "Worldwide",     remote: true }
+  - { keywords: "full stack",         location: "Worldwide",     remote: true }
+  - { keywords: "software engineer",  location: "European Union", remote: true }
+  - { keywords: "software engineer",  location: "United States",  remote: true }
+
+  # ---- Gulf (comment out if you don't want these) ----
+  - { keywords: "software engineer", location: "United Arab Emirates", remote: false }
+  - { keywords: "software engineer", location: "Saudi Arabia",         remote: false }
+
+# ------------------------------------------------------------
+# FILTERS applied to every result before posting.
+# ------------------------------------------------------------
+filters:
+  # Job title must contain at least one of these (case-insensitive).
+  # Leave empty [] to disable this check.
+  title_must_include:
+    - engineer
+    - developer
+    - programmer
+    - software
+    - backend
+    - frontend
+    - full stack
+    - fullstack
+    - flutter
+    - react
+    - angular
+    - vue
+    - node
+    - python
+    - java
+    - ".net"
+    - php
+    - laravel
+    - django
+    - devops
+    - sre
+    - cloud
+    - data
+    - machine learning
+    - ai
+    - qa
+    - test
+    - mobile
+    - android
+    - ios
+    - ui/ux
+    - designer
+
+  # Drop the job if the title contains any of these.
+  title_must_not_include:
+    - sales
+    - recruiter
+    - "talent acquisition"
+    - accountant
+    - "customer service"
+    - teacher
+    - instructor
+    - nurse
+    - driver
+    - "real estate"
+
+  # Drop jobs from these companies (spam agencies, etc.)
+  blocked_companies: []
+
+# ------------------------------------------------------------
+# EXTRA SOURCES — free public APIs, no key needed.
+# These add remote jobs that never show up on LinkedIn.
+# ------------------------------------------------------------
+extra_sources:
+  remotive: true    # remotive.com  — curated remote jobs
+  remoteok: true    # remoteok.com  — remote tech jobs
+  arbeitnow: true   # arbeitnow.com — EU + remote jobs
