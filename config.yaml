@@ -15,35 +15,29 @@ max_posts_per_run: 25
 # Seconds between Telegram sends (avoids 429 rate limits)
 send_delay: 1.2
 
-# ------------------------------------------------------------
-# SEARCHES
+# IMPORTANT — always use geo_id, never a plain location string.
+# LinkedIn silently discards location strings it does not recognise
+# (e.g. "Worldwide") and falls back to geolocating whoever made the
+# request. On a GitHub runner that means US jobs. geo_id is exact.
 #
-# Tuned for Flutter / mobile engineering at mid-level and senior.
-#   exp: 3 = associate, 4 = mid-senior, 5 = director
-#   (1 = internship, 2 = entry — deliberately left out)
+#   Egypt 106155005 | UAE 104305776 | Saudi 100459316
+#   Germany 101282230 | UK 101165590 | USA 103644278
 #
-# Each search costs ~8 seconds of runtime. Add more only if you
-# want them; a shorter list also gets rate-limited less often.
-# ------------------------------------------------------------
+# There is no "remote: true" option any more. LinkedIn guest search
+# accepts the remote flag (f_WT=2) and then ignores it — identical
+# results come back with and without it. Worldwide remote roles come
+# from the dedicated remote job boards under extra_sources instead.
 searches:
-  # ---- Egypt ----
-  - { keywords: "flutter",              location: "Egypt", remote: false, exp: [3, 4, 5] }
-  - { keywords: "flutter developer",    location: "Egypt", remote: false, exp: [3, 4, 5] }
-  - { keywords: "mobile developer",     location: "Egypt", remote: false, exp: [3, 4, 5] }
-  - { keywords: "mobile engineer",      location: "Egypt", remote: false, exp: [3, 4, 5] }
-  - { keywords: "android developer",    location: "Egypt", remote: false, exp: [3, 4, 5] }
-  - { keywords: "ios developer",        location: "Egypt", remote: false, exp: [3, 4, 5] }
-  - { keywords: "react native",         location: "Egypt", remote: false, exp: [3, 4, 5] }
-  - { keywords: "flutter dart",         location: "Egypt", remote: false, exp: [3, 4, 5] }
-
-  # ---- Remote, worldwide ----
-  - { keywords: "flutter",           location: "Worldwide", remote: true, exp: [3, 4, 5] }
-  - { keywords: "flutter developer", location: "Worldwide", remote: true, exp: [3, 4, 5] }
-  - { keywords: "mobile developer",  location: "Worldwide", remote: true, exp: [3, 4, 5] }
-  - { keywords: "mobile engineer",   location: "Worldwide", remote: true, exp: [3, 4, 5] }
-  - { keywords: "react native",      location: "Worldwide", remote: true, exp: [3, 4, 5] }
-  - { keywords: "flutter",           location: "European Union", remote: true, exp: [3, 4, 5] }
-  - { keywords: "flutter",           location: "United States",  remote: true, exp: [3, 4, 5] }
+  - { keywords: "flutter",           geo_id: 106155005, exp: [3, 4, 5] }
+  - { keywords: "flutter developer", geo_id: 106155005, exp: [3, 4, 5] }
+  - { keywords: "mobile developer",  geo_id: 106155005, exp: [3, 4, 5] }
+  - { keywords: "mobile engineer",   geo_id: 106155005, exp: [3, 4, 5] }
+  - { keywords: "android developer", geo_id: 106155005, exp: [3, 4, 5] }
+  - { keywords: "ios developer",     geo_id: 106155005, exp: [3, 4, 5] }
+  - { keywords: "react native",      geo_id: 106155005, exp: [3, 4, 5] }
+  - { keywords: "flutter dart",      geo_id: 106155005, exp: [3, 4, 5] }
+  - { keywords: "mobile application developer", geo_id: 106155005, exp: [3, 4, 5] }
+  - { keywords: "cross platform mobile",        geo_id: 106155005, exp: [3, 4, 5] }
 
 # ------------------------------------------------------------
 # FILTERS applied to every result before posting.
@@ -53,6 +47,28 @@ searches:
 # return all of software dev, and this list narrows it to mobile.
 # ------------------------------------------------------------
 filters:
+  # ---- Geography gate -----------------------------------------
+  # A job is kept only if it is EITHER in one of your home locations
+  # OR its location says it is remote. Everything else is dropped.
+  #
+  # This is what stops on-site roles in Malmo, Puteaux, Sao Paulo and
+  # Kuala Lumpur reaching you. Set home_locations to [] if you ever
+  # want remote-only and nothing local.
+  home_locations:
+    - Egypt
+    - Cairo
+    - Giza
+    - Al Jizah
+    - Alexandria
+    - Maadi
+    - Qesm
+
+  remote_markers:
+    - remote
+    - worldwide
+    - anywhere
+    - global
+
   # ---- Location blocklist -------------------------------------
   # "Remote" rarely means remote-from-anywhere. A lot of worldwide
   # listings are really targeted at one low-cost market. Any job whose
