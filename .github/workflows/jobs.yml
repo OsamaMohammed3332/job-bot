@@ -34,7 +34,10 @@ jobs:
       - name: Fetch and post jobs
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+          # DM-only mode. To post into a channel or group, uncomment the
+          # line below and set CHANNEL_ID in repo Secrets to the chat id
+          # (channels look like -100...). The bot must be an admin there.
+          # CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
         run: python bot.py once
 
       - name: Persist state
