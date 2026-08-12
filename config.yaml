@@ -34,7 +34,7 @@ searches:
   - { keywords: "android developer",    location: "Egypt", remote: false, exp: [3, 4, 5] }
   - { keywords: "ios developer",        location: "Egypt", remote: false, exp: [3, 4, 5] }
   - { keywords: "react native",         location: "Egypt", remote: false, exp: [3, 4, 5] }
-  - { keywords: "dart",                 location: "Egypt", remote: false, exp: [3, 4, 5] }
+  - { keywords: "flutter dart",         location: "Egypt", remote: false, exp: [3, 4, 5] }
 
   # ---- Remote, worldwide ----
   - { keywords: "flutter",           location: "Worldwide", remote: true, exp: [3, 4, 5] }
@@ -53,7 +53,29 @@ searches:
 # return all of software dev, and this list narrows it to mobile.
 # ------------------------------------------------------------
 filters:
-  # Title must contain at least one of these (case-insensitive).
+  # ---- Location blocklist -------------------------------------
+  # "Remote" rarely means remote-from-anywhere. A lot of worldwide
+  # listings are really targeted at one low-cost market. Any job whose
+  # location contains one of these strings is dropped.
+  # Add or remove freely — it's a plain substring match.
+  blocked_locations:
+    - India
+    - Pakistan
+    - Bangladesh
+    - Sri Lanka
+    - Nepal
+    - Philippines
+    - Indonesia
+    - Vietnam
+    - Nigeria
+    - Kenya
+    - Ghana
+    - Venezuela
+    - Bolivia
+
+  # ---- Title include list: NON-LinkedIn sources ---------------
+  # Remotive / RemoteOK / Arbeitnow return all of software dev, so
+  # these need a strict mobile-only list.
   title_must_include:
     - flutter
     - dart
@@ -69,6 +91,39 @@ filters:
     - app developer
     - application developer
     - apps engineer
+
+  # ---- Title include list: LinkedIn ---------------------------
+  # LinkedIn results already came from a Flutter/mobile search query,
+  # so the title doesn't need to re-prove it. This broader list exists
+  # mainly so Arabic-language postings aren't thrown away — plenty of
+  # Egyptian Flutter roles are posted as "مهندس برمجيات".
+  title_must_include_linkedin:
+    - flutter
+    - dart
+    - mobile
+    - android
+    - ios
+    - swift
+    - kotlin
+    - react native
+    - react-native
+    - cross-platform
+    - cross platform
+    - app developer
+    - application developer
+    - apps engineer
+    - engineer
+    - developer
+    - programmer
+    # Arabic
+    - مهندس
+    - مطور
+    - برمجيات
+    - تطبيقات
+    - فلاتر
+    - موبايل
+    - اندرويد
+    - أندرويد
 
   # Drop the job if the title contains any of these.
   # Remove "junior" / "intern" here if you ever want entry-level too.
