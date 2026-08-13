@@ -1,6 +1,15 @@
 name: Job Bot
 
 on:
+  # PRIMARY trigger. A free external cron (cron-job.org) POSTs here every
+  # 2 minutes. GitHub throttles the schedule: trigger below to roughly once
+  # an hour on free repos, but repository_dispatch is NOT throttled - it
+  # fires immediately, every time. This is what makes the bot fast.
+  repository_dispatch:
+    types: [run-bot]
+
+  # BACKUP, in case the external cron ever stops. Expect this to actually
+  # fire every ~50 min rather than every 10, whatever the expression says.
   schedule:
     # Every 10 minutes. GitHub's minimum is 5, but scheduled runs on the
     # free tier get queued during peak hours anyway — 10 is more honest
