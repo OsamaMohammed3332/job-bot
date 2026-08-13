@@ -7,7 +7,7 @@
 #   3600 = last hour, 7200 = 2 hours, 86400 = 24 hours
 # Keep this LARGER than your cron interval so nothing slips through
 # when a GitHub Actions run fires late.
-lookback_seconds: 7200
+lookback_seconds: 21600
 
 # Max jobs posted per run. Safety valve.
 max_posts_per_run: 25
@@ -128,9 +128,6 @@ filters:
     - app developer
     - application developer
     - apps engineer
-    - engineer
-    - developer
-    - programmer
     # Arabic
     - مهندس
     - مطور
