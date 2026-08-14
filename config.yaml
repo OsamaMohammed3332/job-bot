@@ -1,12 +1,16 @@
 # ============================================================
-#  Job bot configuration  —  Flutter / mobile, mid + senior
-#  Egypt + remote worldwide
+#  Job bot configuration
+#
+#  The bot fetches a SUPERSET of jobs (every track, every level)
+#  and each Telegram subscriber filters it their own way with
+#  /track and /level. So this file decides what the bot is
+#  CAPABLE of finding; your friends decide what they receive.
 # ============================================================
 
 # How far back to look on each run.
-#   3600 = last hour, 7200 = 2 hours, 86400 = 24 hours
-# Keep this LARGER than your cron interval so nothing slips through
-# when a GitHub Actions run fires late.
+#   3600 = 1 hour, 21600 = 6 hours, 86400 = 24 hours
+# Generously larger than the polling interval so a delayed run
+# never leaves a gap. Duplicates are removed anyway.
 lookback_seconds: 21600
 
 # Max jobs posted per run. Safety valve.
@@ -15,45 +19,113 @@ max_posts_per_run: 25
 # Seconds between Telegram sends (avoids 429 rate limits)
 send_delay: 1.2
 
-# IMPORTANT — always use geo_id, never a plain location string.
-# LinkedIn silently discards location strings it does not recognise
-# (e.g. "Worldwide") and falls back to geolocating whoever made the
-# request. On a GitHub runner that means US jobs. geo_id is exact.
+# ------------------------------------------------------------
+# TRACKS
 #
+# Each track is a career lane a subscriber can opt into with
+# /track. Add another by copying the pattern - no code changes.
+#
+# geo_id is required. LinkedIn silently discards location strings
+# it does not recognise and geolocates the caller instead, which
+# on a GitHub runner means US jobs.
 #   Egypt 106155005 | UAE 104305776 | Saudi 100459316
-#   Germany 101282230 | UK 101165590 | USA 103644278
 #
-# There is no "remote: true" option any more. LinkedIn guest search
-# accepts the remote flag (f_WT=2) and then ignores it — identical
-# results come back with and without it. Worldwide remote roles come
-# from the dedicated remote job boards under extra_sources instead.
-searches:
-  - { keywords: "flutter",           geo_id: 106155005, exp: [3, 4, 5] }
-  - { keywords: "flutter developer", geo_id: 106155005, exp: [3, 4, 5] }
-  - { keywords: "mobile developer",  geo_id: 106155005, exp: [3, 4, 5] }
-  - { keywords: "mobile engineer",   geo_id: 106155005, exp: [3, 4, 5] }
-  - { keywords: "android developer", geo_id: 106155005, exp: [3, 4, 5] }
-  - { keywords: "ios developer",     geo_id: 106155005, exp: [3, 4, 5] }
-  - { keywords: "react native",      geo_id: 106155005, exp: [3, 4, 5] }
-  - { keywords: "flutter dart",      geo_id: 106155005, exp: [3, 4, 5] }
-  - { keywords: "mobile application developer", geo_id: 106155005, exp: [3, 4, 5] }
-  - { keywords: "cross platform mobile",        geo_id: 106155005, exp: [3, 4, 5] }
+# There is no per-level search. LinkedIn's experience filter works
+# per query, so covering 3 levels would triple the requests. The
+# bot fetches every level and classifies by title instead.
+# ------------------------------------------------------------
+tracks:
+
+  flutter:
+    label: "Flutter / Mobile"
+    searches:
+      - { keywords: "flutter",           geo_id: 106155005 }
+      - { keywords: "flutter developer", geo_id: 106155005 }
+      - { keywords: "mobile developer",  geo_id: 106155005 }
+      - { keywords: "mobile engineer",   geo_id: 106155005 }
+      - { keywords: "android developer", geo_id: 106155005 }
+      - { keywords: "ios developer",     geo_id: 106155005 }
+      - { keywords: "react native",      geo_id: 106155005 }
+      - { keywords: "flutter dart",      geo_id: 106155005 }
+
+    # Strict list - used for the remote job APIs, which return all
+    # of software dev and would otherwise flood the track.
+    title_must_include:
+      - flutter
+      - dart
+      - mobile
+      - android
+      - ios
+      - swift
+      - kotlin
+      - react native
+      - react-native
+      - cross-platform
+      - cross platform
+      - app developer
+      - application developer
+      - apps engineer
+
+    # Broader list - used for LinkedIn, whose results already came
+    # from a mobile-specific query. Mainly here so Arabic postings
+    # such as "مهندس برمجيات" are not thrown away.
+    title_must_include_linkedin:
+      - flutter
+      - dart
+      - mobile
+      - android
+      - ios
+      - swift
+      - kotlin
+      - react native
+      - react-native
+      - cross-platform
+      - cross platform
+      - app developer
+      - application developer
+      - apps engineer
+      # Arabic
+      - مهندس
+      - مطور
+      - برمجيات
+      - تطبيقات
+      - فلاتر
+      - موبايل
+      - اندرويد
+      - أندرويد
+
+  odoo:
+    label: "Odoo / ERP"
+    searches:
+      - { keywords: "odoo",            geo_id: 106155005 }
+      - { keywords: "odoo developer",  geo_id: 106155005 }
+      - { keywords: "odoo functional", geo_id: 106155005 }
+      - { keywords: "odoo implementation", geo_id: 106155005 }
+      - { keywords: "erp developer",   geo_id: 106155005 }
+      - { keywords: "python odoo",     geo_id: 106155005 }
+
+    title_must_include:
+      - odoo
+      - openerp
+
+    # "erp" alone is too loose on the APIs but fine on LinkedIn,
+    # where the query already narrowed things down.
+    title_must_include_linkedin:
+      - odoo
+      - openerp
+      - erp
+      # Arabic
+      - أودو
+      - اودو
 
 # ------------------------------------------------------------
-# FILTERS applied to every result before posting.
-#
-# This is what keeps the extra remote-job APIs (Remotive, RemoteOK,
-# Arbeitnow) from flooding you with backend and data roles — they
-# return all of software dev, and this list narrows it to mobile.
+# GLOBAL FILTERS - applied to every track.
 # ------------------------------------------------------------
 filters:
   # ---- Geography gate -----------------------------------------
-  # A job is kept only if it is EITHER in one of your home locations
-  # OR its location says it is remote. Everything else is dropped.
-  #
-  # This is what stops on-site roles in Malmo, Puteaux, Sao Paulo and
-  # Kuala Lumpur reaching you. Set home_locations to [] if you ever
-  # want remote-only and nothing local.
+  # A job is kept only if it is EITHER in one of these home
+  # locations OR its location says remote. Everything else goes.
+  # This is what stops on-site roles in other countries.
   home_locations:
     - Egypt
     - Cairo
@@ -70,10 +142,8 @@ filters:
     - global
 
   # ---- Location blocklist -------------------------------------
-  # "Remote" rarely means remote-from-anywhere. A lot of worldwide
-  # listings are really targeted at one low-cost market. Any job whose
-  # location contains one of these strings is dropped.
-  # Add or remove freely — it's a plain substring match.
+  # "Remote" often means remote-from-one-country. Any job whose
+  # location contains one of these is dropped.
   blocked_locations:
     - India
     - Pakistan
@@ -89,64 +159,10 @@ filters:
     - Venezuela
     - Bolivia
 
-  # ---- Title include list: NON-LinkedIn sources ---------------
-  # Remotive / RemoteOK / Arbeitnow return all of software dev, so
-  # these need a strict mobile-only list.
-  title_must_include:
-    - flutter
-    - dart
-    - mobile
-    - android
-    - ios
-    - swift
-    - kotlin
-    - react native
-    - react-native
-    - cross-platform
-    - cross platform
-    - app developer
-    - application developer
-    - apps engineer
-
-  # ---- Title include list: LinkedIn ---------------------------
-  # LinkedIn results already came from a Flutter/mobile search query,
-  # so the title doesn't need to re-prove it. This broader list exists
-  # mainly so Arabic-language postings aren't thrown away — plenty of
-  # Egyptian Flutter roles are posted as "مهندس برمجيات".
-  title_must_include_linkedin:
-    - flutter
-    - dart
-    - mobile
-    - android
-    - ios
-    - swift
-    - kotlin
-    - react native
-    - react-native
-    - cross-platform
-    - cross platform
-    - app developer
-    - application developer
-    - apps engineer
-    # Arabic
-    - مهندس
-    - مطور
-    - برمجيات
-    - تطبيقات
-    - فلاتر
-    - موبايل
-    - اندرويد
-    - أندرويد
-
   # Drop the job if the title contains any of these.
-  # Remove "junior" / "intern" here if you ever want entry-level too.
+  # NOTE: junior/intern are NOT here any more - subscribers who
+  # want junior roles select them with /level.
   title_must_not_include:
-    - intern
-    - internship
-    - trainee
-    - junior
-    - fresh grad
-    - graduate program
     - sales
     - recruiter
     - "talent acquisition"
@@ -156,14 +172,14 @@ filters:
     - instructor
     - "business development"
 
-  # Drop jobs from these companies (spam agencies, etc.)
   blocked_companies: []
 
 # ------------------------------------------------------------
-# EXTRA SOURCES — free public APIs, no key needed.
-# These add remote jobs that never show up on LinkedIn.
+# EXTRA SOURCES - free public APIs, no key needed.
+# Each result is matched against every track's strict include
+# list; anything matching no track is discarded.
 # ------------------------------------------------------------
 extra_sources:
-  remotive: true    # remotive.com  — curated remote jobs
-  remoteok: true    # remoteok.com  — remote tech jobs
-  arbeitnow: true   # arbeitnow.com — EU + remote jobs
+  remotive: true    # remotive.com  - curated remote jobs
+  remoteok: true    # remoteok.com  - remote tech jobs
+  arbeitnow: true   # arbeitnow.com - EU + remote jobs
