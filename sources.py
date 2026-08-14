@@ -49,6 +49,8 @@ class Job:
     source: str = "LinkedIn"
     posted_at: datetime | None = None   # when the job went live (UTC)
     tags: list[str] = field(default_factory=list)
+    track: str = ""                     # "flutter" | "odoo" | ...
+    level: str = ""                     # "junior" | "mid" | "senior"
 
     def age_text(self) -> str:
         """Human 'x minutes ago' string, like the channel you showed."""
@@ -106,6 +108,38 @@ def _job_id_from_card(card) -> str | None:
         if m:
             return m.group(1)
     return None
+
+
+# --------------------------------------------------------------------------
+#  Seniority classification
+# --------------------------------------------------------------------------
+#
+# LinkedIn's own experience filter (f_E) can only be applied per query, so
+# using it would mean running every search three times over. Instead we fetch
+# once and read the level off the title. It's a heuristic, not gospel: a
+# posting titled plain "Flutter Developer" lands in "mid" whatever the body
+# text says. That is the honest trade for covering every level in one pass.
+
+_SENIOR_MARKERS = [
+    "senior", "sr.", "sr ", "lead", "principal", "staff engineer",
+    "architect", "head of", "expert", "iii", " iv", "manager",
+    "كبير", "خبير",
+]
+_JUNIOR_MARKERS = [
+    "junior", "jr.", "jr ", "intern", "internship", "trainee",
+    "entry level", "entry-level", "graduate", "fresh grad", "fresher",
+    "مبتدئ", "متدرب", "حديث",
+]
+
+
+def classify_level(title: str) -> str:
+    """Return 'junior', 'senior', or 'mid' based on the job title."""
+    t = f" {title.lower()} "
+    if any(m in t for m in _JUNIOR_MARKERS):
+        return "junior"
+    if any(m in t for m in _SENIOR_MARKERS):
+        return "senior"
+    return "mid"
 
 
 _REL_RE = re.compile(
