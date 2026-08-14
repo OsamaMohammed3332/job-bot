@@ -154,11 +154,8 @@ Right now you're set to receive <b>everything</b>. Tap /track to narrow it down.
 
 HELP = """<b>Job Bot commands</b>
 
-/track — Flutter, Odoo, or everything (multi-select)
-/level — Junior, Mid, Senior, or any mix (multi-select)
-
-Tap a button to add ✅, tap again to remove. Selecting none means no
-restriction, so you will never end up with an empty feed by accident.
+/track — Flutter, Odoo, or everything
+/level — Junior, Mid, Senior, or any mix
 /status — show your current settings
 /search flutter — search right now
 /keywords python, laravel — extra title words you care about
@@ -167,4 +164,6 @@ restriction, so you will never end up with an empty feed by accident.
 /stop — stop all alerts
 /start — start again
 
-Filters you don't set are left wide open."""
+<b>Track and level are multi-select.</b> Tap a button to add ✅, tap again to remove it. Pick Mid <i>and</i> Senior together if that is your range.
+
+Selecting nothing means no restriction, so you will never end up with an empty feed by accident."""
