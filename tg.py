@@ -176,7 +176,7 @@ Pick what you want and you're done:
 /track — Flutter, Odoo, or everything
 /level — Junior, Mid, Senior, or any mix
 
-Buttons appear above your keyboard. Tap one to add a ✅, tap it again to remove it - pick Mid <i>and</i> Senior if that is your range. Tap <b>✔️ Done</b> when finished.
+Buttons appear above your keyboard. Tap every option you want - pick Mid <i>and</i> Senior if that is your range. Tap <b>All levels</b> / <b>Everything</b> to start over, then <b>✔️ Done</b>.
 
 Replies take a minute or two to arrive; that is normal.
 
@@ -195,7 +195,7 @@ HELP = """<b>Job Bot commands</b>
 /stop — stop all alerts
 /start — start again
 
-<b>Track and level are multi-select.</b> Tap a button to add ✅, tap it again to remove it, then tap <b>✔️ Done</b>.
+<b>Track and level are multi-select.</b> Tap every option you want, then tap <b>✔️ Done</b>. A ✅ marks what you have chosen. Tapping <b>All levels</b> or <b>Everything</b> clears your choices and puts you back to receiving all of them.
 
 The bot checks for jobs every couple of minutes, so replies are not instant.
 
