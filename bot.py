@@ -242,30 +242,54 @@ def _status_text(sub: dict, tracks: dict) -> str:
     )
 
 
+def _toggle(current: list | None, val: str, valid) -> list:
+    """Add or remove one value. 'all' clears the list entirely.
+
+    An empty list means "no restriction", so deselecting everything can
+    never leave someone with a silently empty feed.
+    """
+    cur = list(current or [])
+    if val == "all":
+        return []
+    if val not in valid:
+        return cur
+    if val in cur:
+        cur.remove(val)
+    else:
+        cur.append(val)
+    return cur
+
+
 def _handle_callback(tg: Telegram, store: Store, cfg: dict, cq: dict) -> None:
     data = cq.get("data") or ""
-    chat_id = ((cq.get("message") or {}).get("chat") or {}).get("id")
+    msg = cq.get("message") or {}
+    chat_id = (msg.get("chat") or {}).get("id")
+    msg_id = msg.get("message_id")
     tracks = cfg.get("tracks") or {}
     if not chat_id:
         return
+
     store.subscribe(chat_id)
+    sub = store.subscribers().get(str(chat_id), {})
 
     if data.startswith("level:"):
         val = data.split(":", 1)[1]
-        levels = [] if val == "all" else [val]
-        store.set_filter(chat_id, "levels", levels)
-        label = "all levels" if not levels else LEVEL_LABELS.get(val, val)
-        tg.answer_callback(cq["id"], f"Level: {label}")
-        tg.send(chat_id, f"📊 Level set to <b>{label}</b>.")
+        new = _toggle(sub.get("levels"), val, set(LEVELS))
+        store.set_filter(chat_id, "levels", new)
+        summary = ", ".join(LEVEL_LABELS.get(l, l) for l in new) or "all levels"
+        tg.answer_callback(cq["id"], summary)
+        if msg_id:
+            tg.edit_markup(chat_id, msg_id, level_keyboard(new))
 
     elif data.startswith("track:"):
         val = data.split(":", 1)[1]
-        chosen = [] if val == "all" else [val]
-        store.set_filter(chat_id, "tracks", chosen)
-        label = ("everything" if not chosen
-                 else tracks.get(val, {}).get("label", val))
-        tg.answer_callback(cq["id"], f"Track: {label}")
-        tg.send(chat_id, f"🎯 Track set to <b>{label}</b>.")
+        new = _toggle(sub.get("tracks"), val, set(tracks))
+        store.set_filter(chat_id, "tracks", new)
+        summary = ", ".join(tracks.get(t, {}).get("label", t)
+                            for t in new) or "everything"
+        tg.answer_callback(cq["id"], summary)
+        if msg_id:
+            tg.edit_markup(chat_id, msg_id, track_keyboard(tracks, new))
     else:
         tg.answer_callback(cq["id"])
 
@@ -293,7 +317,9 @@ def handle_commands(tg: Telegram, store: Store, cfg: dict) -> None:
 
         if cmd == "/start":
             store.subscribe(chat_id)
-            tg.send(chat_id, WELCOME, keyboard=track_keyboard(tracks))
+            sub = store.subscribers().get(str(chat_id), {})
+            tg.send(chat_id, WELCOME,
+                    keyboard=track_keyboard(tracks, sub.get("tracks")))
 
         elif cmd == "/help":
             tg.send(chat_id, HELP)
@@ -304,12 +330,17 @@ def handle_commands(tg: Telegram, store: Store, cfg: dict) -> None:
 
         elif cmd == "/track":
             store.subscribe(chat_id)
-            tg.send(chat_id, "🎯 Which jobs do you want?",
-                    keyboard=track_keyboard(tracks))
+            sub = store.subscribers().get(str(chat_id), {})
+            tg.send(chat_id,
+                    "🎯 Which jobs do you want?\n<i>Tap to add ✅, tap again to remove.</i>",
+                    keyboard=track_keyboard(tracks, sub.get("tracks")))
 
         elif cmd == "/level":
             store.subscribe(chat_id)
-            tg.send(chat_id, "📊 Which level?", keyboard=level_keyboard())
+            sub = store.subscribers().get(str(chat_id), {})
+            tg.send(chat_id,
+                    "📊 Which level?\n<i>Tap to add ✅, tap again to remove. Pick more than one.</i>",
+                    keyboard=level_keyboard(sub.get("levels")))
 
         elif cmd == "/status":
             tg.send(chat_id,
