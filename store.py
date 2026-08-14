@@ -45,21 +45,28 @@ class Store:
     def subscribers(self) -> dict:
         return self.data["subscribers"]
 
+    # An empty list always means "no restriction", so new subscribers
+    # receive everything until they narrow it down themselves.
+    DEFAULTS = {"keywords": [], "locations": [], "tracks": [], "levels": []}
+
     def subscribe(self, chat_id) -> bool:
         """Returns True if this is a brand-new subscriber."""
         key = str(chat_id)
         if key in self.data["subscribers"]:
+            # Backfill fields added after this person subscribed, so an
+            # older subscriber does not crash on a missing key.
+            for k, v in self.DEFAULTS.items():
+                self.data["subscribers"][key].setdefault(k, list(v))
             return False
-        self.data["subscribers"][key] = {"keywords": [], "locations": []}
+        self.data["subscribers"][key] = {k: list(v) for k, v in self.DEFAULTS.items()}
         return True
 
     def unsubscribe(self, chat_id) -> None:
         self.data["subscribers"].pop(str(chat_id), None)
 
     def set_filter(self, chat_id, field: str, values: list[str]) -> None:
-        key = str(chat_id)
-        self.data["subscribers"].setdefault(key, {"keywords": [], "locations": []})
-        self.data["subscribers"][key][field] = values
+        self.subscribe(chat_id)          # ensures the record exists + is complete
+        self.data["subscribers"][str(chat_id)][field] = values
 
     # ---------------- telegram update cursor ----------------
 
