@@ -75,6 +75,18 @@ class Telegram:
     def me(self):
         return self._call("getMe")
 
+    def set_commands(self, commands: list):
+        """Registers the blue Menu button next to the text field."""
+        return self._call("setMyCommands", commands=commands)
+
+    def set_description(self, text: str):
+        """Shown on the bot's empty-chat screen before /start."""
+        return self._call("setMyDescription", description=text)
+
+    def set_short_description(self, text: str):
+        """Shown on the bot's profile card."""
+        return self._call("setMyShortDescription", short_description=text)
+
 
 # --------------------------------------------------------------------------
 #  Keyboards
@@ -155,12 +167,11 @@ def format_job(job, tracks: dict | None = None) -> str:
         f"<b>{e(job.title)}</b>",
         f"🏢 {e(job.company)}",
         f"📍 {e(job.location)}",
-        f"🕒 {e(job.age_text())}",
+        f"🕒 {e(job.age_text())} · {e(job.source)}",
     ]
     if label or level:
         lines.append(f"🎯 {e(label)} · {e(level)}")
     lines += [
-        f"📌 via {e(job.source)}",
         "",
         f'➡️ <a href="{e(job.url, quote=True)}">Apply Here</a>',
     ]
@@ -200,3 +211,33 @@ HELP = """<b>Job Bot commands</b>
 The bot checks for jobs every couple of minutes, so replies are not instant.
 
 Selecting nothing means no restriction, so you will never end up with an empty feed by accident."""
+
+
+# --------------------------------------------------------------------------
+#  Bot profile - the Menu button and the text people see before /start
+# --------------------------------------------------------------------------
+
+BOT_COMMANDS = [
+    {"command": "track", "description": "Choose Flutter, Odoo or everything"},
+    {"command": "level", "description": "Choose Junior, Mid, Senior or all"},
+    {"command": "status", "description": "Show my current settings"},
+    {"command": "search", "description": "Search jobs right now"},
+    {"command": "keywords", "description": "Filter by extra words in the title"},
+    {"command": "locations", "description": "Filter by place"},
+    {"command": "help", "description": "How this bot works"},
+    {"command": "stop", "description": "Stop receiving alerts"},
+]
+
+SHORT_DESCRIPTION = (
+    "Flutter and Odoo jobs in Egypt and remote worldwide, minutes after "
+    "they are posted."
+)
+
+DESCRIPTION = (
+    "I watch LinkedIn and remote job boards around the clock and message you "
+    "the moment a matching job appears - usually within minutes of it going "
+    "live.\n\n"
+    "Choose your track (Flutter or Odoo) and your level (Junior, Mid, Senior "
+    "or any mix), and you only ever hear about jobs that fit.\n\n"
+    "Tap Start to begin."
+)
