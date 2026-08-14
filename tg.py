@@ -58,6 +58,14 @@ class Telegram:
         return self._call("answerCallbackQuery",
                           callback_query_id=callback_id, text=text)
 
+    def edit_markup(self, chat_id, message_id, keyboard: list):
+        """Redraw the buttons in place so ticks appear as you tap."""
+        return self._call(
+            "editMessageReplyMarkup",
+            chat_id=chat_id, message_id=message_id,
+            reply_markup={"inline_keyboard": keyboard},
+        )
+
     def get_updates(self, offset: int | None = None, timeout: int = 0):
         return self._call(
             "getUpdates", offset=offset, timeout=timeout,
@@ -72,28 +80,36 @@ class Telegram:
 #  Keyboards
 # --------------------------------------------------------------------------
 
-def level_keyboard() -> list:
+def _tick(text: str, on: bool) -> str:
+    return f"✅ {text}" if on else text
+
+
+def level_keyboard(selected: list | None = None) -> list:
+    """Multi-select. An empty selection means no restriction, so the
+    'All levels' row is the one ticked when nothing else is."""
+    s = set(selected or [])
     return [
-        [{"text": "Junior", "callback_data": "level:junior"},
-         {"text": "Mid-level", "callback_data": "level:mid"}],
-        [{"text": "Senior", "callback_data": "level:senior"},
-         {"text": "All levels", "callback_data": "level:all"}],
+        [{"text": _tick("Junior", "junior" in s), "callback_data": "level:junior"},
+         {"text": _tick("Mid-level", "mid" in s), "callback_data": "level:mid"}],
+        [{"text": _tick("Senior", "senior" in s), "callback_data": "level:senior"}],
+        [{"text": _tick("All levels", not s), "callback_data": "level:all"}],
     ]
 
 
-def track_keyboard(tracks: dict) -> list:
-    """One button per configured track, plus an 'everything' option."""
-    rows = []
-    row = []
+def track_keyboard(tracks: dict, selected: list | None = None) -> list:
+    """One button per configured track, plus an 'everything' reset."""
+    s = set(selected or [])
+    rows, row = [], []
     for name, t in tracks.items():
-        row.append({"text": t.get("label", name.title()),
+        row.append({"text": _tick(t.get("label", name.title()), name in s),
                     "callback_data": f"track:{name}"})
         if len(row) == 2:
             rows.append(row)
             row = []
     if row:
         rows.append(row)
-    rows.append([{"text": "Everything", "callback_data": "track:all"}])
+    rows.append([{"text": _tick("Everything", not s),
+                  "callback_data": "track:all"}])
     return rows
 
 
@@ -129,15 +145,20 @@ I watch LinkedIn and remote job boards and message you the moment something matc
 Pick what you want and you're done:
 
 /track — Flutter, Odoo, or everything
-/level — Junior, Mid, Senior, or all
+/level — Junior, Mid, Senior, or any mix
+
+Both are multi-select: tap to add a ✅, tap again to remove it. Pick Mid <i>and</i> Senior if you want both.
 
 Right now you're set to receive <b>everything</b>. Tap /track to narrow it down."""
 
 
 HELP = """<b>Job Bot commands</b>
 
-/track — choose Flutter, Odoo, or everything
-/level — choose Junior, Mid, Senior, or all levels
+/track — Flutter, Odoo, or everything (multi-select)
+/level — Junior, Mid, Senior, or any mix (multi-select)
+
+Tap a button to add ✅, tap again to remove. Selecting none means no
+restriction, so you will never end up with an empty feed by accident.
 /status — show your current settings
 /search flutter — search right now
 /keywords python, laravel — extra title words you care about
