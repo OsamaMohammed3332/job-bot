@@ -21,6 +21,8 @@ Environment
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import sys
 import time
@@ -38,9 +40,12 @@ from sources import (
 )
 from store import Store
 from tg import (
+    BOT_COMMANDS,
+    DESCRIPTION,
     DONE_LABEL,
     HELP,
     REMOVE_KB,
+    SHORT_DESCRIPTION,
     WELCOME,
     LEVEL_LABELS,
     Telegram,
@@ -61,6 +66,28 @@ LEVELS = ("junior", "mid", "senior")
 def log(*a):
     stamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
     print(f"[{stamp}]", *a, flush=True)
+
+
+def sync_profile(tg: Telegram, store: Store) -> None:
+    """Publish the command menu and profile copy - but only when they change.
+
+    This runs on every invocation, so it is guarded by a hash. Telegram would
+    happily accept the same values 700 times a day; there is no reason to ask.
+    """
+    payload = {"c": BOT_COMMANDS, "d": DESCRIPTION, "s": SHORT_DESCRIPTION}
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()
+    ).hexdigest()[:16]
+
+    if store.data.get("profile_hash") == digest:
+        return
+
+    if tg.set_commands(BOT_COMMANDS) is None:
+        return                      # leave the hash unset so we retry later
+    tg.set_short_description(SHORT_DESCRIPTION)
+    tg.set_description(DESCRIPTION)
+    store.data["profile_hash"] = digest
+    log("Command menu and bot profile updated")
 
 
 def load_config() -> dict:
@@ -504,6 +531,7 @@ def main() -> None:
     me = tg.me()
     if me:
         log(f"Running as @{me.get('username')}")
+    sync_profile(tg, store)
 
     if mode == "once":
         try:
