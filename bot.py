@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """
-Telegram job bot — LinkedIn (Egypt) + remote jobs worldwide.
+Telegram job bot - multi-track, multi-subscriber.
+
+The bot fetches a SUPERSET of jobs (every configured track, every seniority
+level) and each subscriber filters it their own way via /track and /level.
+That way one deployment serves any number of people with different tastes.
 
 Modes
 -----
-  python bot.py once     Fetch new jobs, post them, handle any pending
-                         commands, save state, exit.  <- GitHub Actions
-  python bot.py serve    Same thing on a loop, plus instant command
-                         replies via long-polling.    <- VPS / Railway
-  python bot.py test     Fetch and print jobs. Sends nothing to Telegram.
+  python bot.py once     Fetch, deliver, handle commands, save, exit.
+  python bot.py serve    Same on a loop, with instant command replies.
+  python bot.py test     Fetch and print. Sends nothing to Telegram.
 
 Environment
 -----------
-  BOT_TOKEN    required — from @BotFather
-  CHANNEL_ID   optional — @yourchannel or -100123...; omit to skip channel
-  POLL_SECONDS optional — serve-mode interval, default 300
+  BOT_TOKEN    required - from @BotFather
+  CHANNEL_ID   optional - @yourchannel or -100123...; omit for DM-only
+  POLL_SECONDS optional - serve-mode interval, default 300
 """
 
 from __future__ import annotations
@@ -28,17 +30,28 @@ import yaml
 
 from sources import (
     Job,
+    classify_level,
     fetch_arbeitnow,
     fetch_linkedin,
     fetch_remoteok,
     fetch_remotive,
 )
 from store import Store
-from tg import HELP, Telegram, format_job
+from tg import (
+    HELP,
+    WELCOME,
+    LEVEL_LABELS,
+    Telegram,
+    format_job,
+    level_keyboard,
+    track_keyboard,
+)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HERE, "config.yaml")
 STATE_PATH = os.path.join(HERE, "state.json")
+
+LEVELS = ("junior", "mid", "senior")
 
 
 def log(*a):
@@ -52,10 +65,11 @@ def load_config() -> dict:
 
 
 # ---------------------------------------------------------------------------
-#  Collect + filter
+#  Filtering
 # ---------------------------------------------------------------------------
 
-def passes_filters(job: Job, filters: dict) -> bool:
+def passes_global_filters(job: Job, filters: dict) -> bool:
+    """Rules that apply to every track: geography, blocklists, junk titles."""
     title = job.title.lower()
     location = job.location.lower()
 
@@ -63,71 +77,81 @@ def passes_filters(job: Job, filters: dict) -> bool:
     if any(b in job.company.lower() for b in blocked):
         return False
 
-    # Drop roles advertised for markets you don't want to be hired into.
     for loc in filters.get("blocked_locations") or []:
         if loc.lower() in location:
             return False
 
-    # The geography gate.
-    #
-    # A job is only useful if it is either (a) where you live, or (b) actually
-    # remote. LinkedIn's guest endpoint ignores its own remote filter (f_WT)
-    # and the job cards carry no work-type field, so an on-site role in Malmo
-    # is indistinguishable from a remote one at the source. This gate is the
-    # backstop: anything outside your home country must say remote somewhere
-    # in its location, or it gets dropped.
+    # Geography gate. A job is only useful if it is either where you live or
+    # genuinely remote. LinkedIn's guest endpoint ignores its own remote
+    # filter and the cards carry no work-type field, so this is the backstop.
     home = [h.lower() for h in filters.get("home_locations") or []]
     markers = [m.lower() for m in filters.get("remote_markers") or []]
     if home or markers:
-        at_home = any(h in location for h in home)
-        is_remote = any(m in location for m in markers)
-        if not (at_home or is_remote):
+        if not (any(h in location for h in home)
+                or any(m in location for m in markers)):
             return False
 
     bad = [w.lower() for w in filters.get("title_must_not_include") or []]
     if any(w in title for w in bad):
         return False
 
-    # Two different include lists, because the sources differ in quality:
-    #
-    #   LinkedIn results already came from a Flutter/mobile-specific search
-    #   query, so the title itself doesn't have to prove relevance. Using the
-    #   strict list here would throw away Arabic-language postings like
-    #   "مهندس برمجيات" that are genuinely Flutter roles.
-    #
-    #   The remote-job APIs return all of software dev, so those need the
-    #   strict mobile-only list.
-    if job.source == "LinkedIn":
-        good = filters.get("title_must_include_linkedin") or []
-    else:
-        good = filters.get("title_must_include") or []
-
-    good = [w.lower() for w in good]
-    if good and not any(w in title for w in good):
-        return False
-
     return True
 
 
+def matches_track(job: Job, track: dict) -> bool:
+    """Does this job's title fit the given track?
+
+    LinkedIn results get the broader list, because the search query already
+    narrowed them down. API results get the strict list, because those feeds
+    return all of software development.
+    """
+    key = ("title_must_include_linkedin"
+           if job.source == "LinkedIn" else "title_must_include")
+    words = [w.lower() for w in track.get(key) or []]
+    if not words:
+        return True
+    title = job.title.lower()
+    return any(w in title for w in words)
+
+
+def passes_filters(job: Job, cfg: dict) -> bool:
+    """Full check: global rules plus the job's own track rules."""
+    if not passes_global_filters(job, cfg.get("filters") or {}):
+        return False
+    track = (cfg.get("tracks") or {}).get(job.track)
+    if track is None:
+        return False
+    return matches_track(job, track)
+
+
+# ---------------------------------------------------------------------------
+#  Collect
+# ---------------------------------------------------------------------------
+
 def collect(cfg: dict) -> list[Job]:
-    """Run every configured search + extra source, merge, dedupe, sort."""
-    lookback = cfg.get("lookback_seconds", 7200)
+    """Run every track's searches plus the shared APIs, then merge."""
+    lookback = cfg.get("lookback_seconds", 21600)
+    tracks = cfg.get("tracks") or {}
     jobs: list[Job] = []
 
-    for s in cfg.get("searches", []):
-        kw = s.get("keywords", "")
-        loc = s.get("location", "")
-        found = fetch_linkedin(
-            kw,
-            loc,
-            geo_id=s.get("geo_id"),
-            lookback_seconds=lookback,
-            exp=s.get("exp"),
-            log=log,
-        )
-        log(f"  LinkedIn [{kw or 'any'} @ {loc or s.get('geo_id')}] -> {len(found)}")
-        jobs.extend(found)
+    for track_name, track in tracks.items():
+        for s in track.get("searches") or []:
+            kw = s.get("keywords", "")
+            found = fetch_linkedin(
+                kw,
+                s.get("location", ""),
+                geo_id=s.get("geo_id"),
+                lookback_seconds=lookback,
+                exp=s.get("exp"),
+                log=log,
+            )
+            for j in found:
+                j.track = track_name
+            log(f"  LinkedIn [{track_name}: {kw}] -> {len(found)}")
+            jobs.extend(found)
 
+    # Shared API sources. Each result is assigned to the first track whose
+    # strict include list it matches; unmatched results are discarded.
     extra = cfg.get("extra_sources") or {}
     cutoff = time.time() - lookback
     for name, fn in (
@@ -137,15 +161,21 @@ def collect(cfg: dict) -> list[Job]:
     ):
         if not extra.get(name):
             continue
-        found = [
+        fresh = [
             j for j in fn(log=log)
             if j.posted_at is None or j.posted_at.timestamp() >= cutoff
         ]
-        log(f"  {name} -> {len(found)}")
-        jobs.extend(found)
+        kept = 0
+        for j in fresh:
+            for track_name, track in tracks.items():
+                if matches_track(j, track):
+                    j.track = track_name
+                    jobs.append(j)
+                    kept += 1
+                    break
+        log(f"  {name} -> {kept} matched (of {len(fresh)} recent)")
 
-    # Dedupe by id, then by (title, company) to catch the same role
-    # cross-posted to two sources.
+    # Dedupe by id, then by (title, company) to catch cross-postings.
     seen_ids, seen_pairs, unique = set(), set(), []
     for j in jobs:
         pair = (j.title.lower().strip(), j.company.lower().strip())
@@ -153,14 +183,40 @@ def collect(cfg: dict) -> list[Job]:
             continue
         seen_ids.add(j.id)
         seen_pairs.add(pair)
+        j.level = classify_level(j.title)
         unique.append(j)
 
-    # Newest first — so if we hit max_posts_per_run we keep the freshest.
     unique.sort(
         key=lambda j: j.posted_at or datetime.min.replace(tzinfo=timezone.utc),
         reverse=True,
     )
     return unique
+
+
+# ---------------------------------------------------------------------------
+#  Per-subscriber delivery rules
+# ---------------------------------------------------------------------------
+
+def matches_subscriber(job: Job, sub: dict) -> bool:
+    """Empty list = no restriction, so a new subscriber gets everything."""
+    tracks = sub.get("tracks") or []
+    if tracks and job.track not in tracks:
+        return False
+
+    levels = sub.get("levels") or []
+    if levels and job.level not in levels:
+        return False
+
+    hay = job.haystack()
+    kws = sub.get("keywords") or []
+    if kws and not any(k in hay for k in kws):
+        return False
+
+    locs = sub.get("locations") or []
+    if locs and not any(l in job.location.lower() or l in hay for l in locs):
+        return False
+
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -171,11 +227,60 @@ def _parse_list(arg: str) -> list[str]:
     return [p.strip().lower() for p in arg.replace(",", " ").split() if p.strip()]
 
 
+def _status_text(sub: dict, tracks: dict) -> str:
+    if not sub:
+        return "You're not subscribed. Send /start."
+    chosen = sub.get("tracks") or []
+    tl = ", ".join(tracks.get(t, {}).get("label", t) for t in chosen) or "everything"
+    lv = ", ".join(LEVEL_LABELS.get(l, l) for l in (sub.get("levels") or [])) or "all levels"
+    return (
+        "<b>Your settings</b>\n"
+        f"🎯 Track: {tl}\n"
+        f"📊 Level: {lv}\n"
+        f"🔑 Keywords: {', '.join(sub.get('keywords') or []) or 'any'}\n"
+        f"📍 Locations: {', '.join(sub.get('locations') or []) or 'any'}"
+    )
+
+
+def _handle_callback(tg: Telegram, store: Store, cfg: dict, cq: dict) -> None:
+    data = cq.get("data") or ""
+    chat_id = ((cq.get("message") or {}).get("chat") or {}).get("id")
+    tracks = cfg.get("tracks") or {}
+    if not chat_id:
+        return
+    store.subscribe(chat_id)
+
+    if data.startswith("level:"):
+        val = data.split(":", 1)[1]
+        levels = [] if val == "all" else [val]
+        store.set_filter(chat_id, "levels", levels)
+        label = "all levels" if not levels else LEVEL_LABELS.get(val, val)
+        tg.answer_callback(cq["id"], f"Level: {label}")
+        tg.send(chat_id, f"📊 Level set to <b>{label}</b>.")
+
+    elif data.startswith("track:"):
+        val = data.split(":", 1)[1]
+        chosen = [] if val == "all" else [val]
+        store.set_filter(chat_id, "tracks", chosen)
+        label = ("everything" if not chosen
+                 else tracks.get(val, {}).get("label", val))
+        tg.answer_callback(cq["id"], f"Track: {label}")
+        tg.send(chat_id, f"🎯 Track set to <b>{label}</b>.")
+    else:
+        tg.answer_callback(cq["id"])
+
+
 def handle_commands(tg: Telegram, store: Store, cfg: dict) -> None:
-    """Drain pending Telegram updates and respond to commands."""
-    updates = tg.get_updates(offset=store.offset or None)
-    for u in updates:
+    """Drain pending Telegram updates and respond."""
+    tracks = cfg.get("tracks") or {}
+
+    for u in tg.get_updates(offset=store.offset or None):
         store.offset = u["update_id"] + 1
+
+        if "callback_query" in u:
+            _handle_callback(tg, store, cfg, u["callback_query"])
+            continue
+
         msg = u.get("message") or {}
         text = (msg.get("text") or "").strip()
         chat_id = (msg.get("chat") or {}).get("id")
@@ -183,16 +288,32 @@ def handle_commands(tg: Telegram, store: Store, cfg: dict) -> None:
             continue
 
         cmd, _, arg = text.partition(" ")
-        cmd = cmd.split("@")[0].lower()      # strip @botname in groups
+        cmd = cmd.split("@")[0].lower()
         arg = arg.strip()
 
-        if cmd in ("/start", "/help"):
+        if cmd == "/start":
             store.subscribe(chat_id)
+            tg.send(chat_id, WELCOME, keyboard=track_keyboard(tracks))
+
+        elif cmd == "/help":
             tg.send(chat_id, HELP)
 
         elif cmd == "/stop":
             store.unsubscribe(chat_id)
-            tg.send(chat_id, "Unsubscribed. Send /start to turn alerts back on.")
+            tg.send(chat_id, "Stopped. Send /start whenever you want them back.")
+
+        elif cmd == "/track":
+            store.subscribe(chat_id)
+            tg.send(chat_id, "🎯 Which jobs do you want?",
+                    keyboard=track_keyboard(tracks))
+
+        elif cmd == "/level":
+            store.subscribe(chat_id)
+            tg.send(chat_id, "📊 Which level?", keyboard=level_keyboard())
+
+        elif cmd == "/status":
+            tg.send(chat_id,
+                    _status_text(store.subscribers().get(str(chat_id)), tracks))
 
         elif cmd in ("/keywords", "/locations"):
             field = "keywords" if cmd == "/keywords" else "locations"
@@ -206,65 +327,23 @@ def handle_commands(tg: Telegram, store: Store, cfg: dict) -> None:
                 tg.send(chat_id, f"{field.capitalize()}: <b>{', '.join(vals)}</b>")
             else:
                 cur = store.subscribers().get(str(chat_id), {}).get(field, [])
-                tg.send(chat_id, f"Current {field}: {', '.join(cur) or 'none'}")
-
-        elif cmd == "/status":
-            sub = store.subscribers().get(str(chat_id))
-            if not sub:
-                tg.send(chat_id, "Not subscribed. Send /start.")
-            else:
-                tg.send(
-                    chat_id,
-                    "Subscribed ✅\n"
-                    f"Keywords: {', '.join(sub['keywords']) or 'all'}\n"
-                    f"Locations: {', '.join(sub['locations']) or 'all'}",
-                )
+                tg.send(chat_id, f"Current {field}: {', '.join(cur) or 'any'}")
 
         elif cmd == "/search":
             if not arg:
-                tg.send(chat_id, "Usage: <code>/search flutter egypt</code>")
+                tg.send(chat_id, "Usage: <code>/search flutter</code>")
                 continue
-            tg.send(chat_id, f"🔎 Searching <b>{arg}</b> …")
-            # Last word is treated as a country if we know its geoId.
-            # geoIds are used rather than location strings because an
-            # unrecognised string makes LinkedIn geolocate the runner's IP.
-            GEO = {
-                "egypt": 106155005,
-                "uae": 104305776,
-                "saudi": 100459316,
-                "germany": 101282230,
-                "uk": 101165590,
-                "usa": 103644278,
-            }
-            words = arg.split()
-            geo = GEO["egypt"]
-            kw = arg
-            if len(words) > 1 and words[-1].lower() in GEO:
-                kw = " ".join(words[:-1])
-                geo = GEO[words[-1].lower()]
+            tg.send(chat_id, f"🔎 Searching <b>{arg}</b> ...")
             hits = fetch_linkedin(
-                kw,
-                geo_id=geo,
-                lookback_seconds=7 * 86400,
-                pages=1,
-                log=log,
+                arg, geo_id=106155005,          # Egypt
+                lookback_seconds=7 * 86400, pages=1, log=log,
             )
             if not hits:
-                tg.send(chat_id, "No results (or LinkedIn rate-limited us — try again in a minute).")
+                tg.send(chat_id, "No results - try a different word.")
             for j in hits[:10]:
-                tg.send(chat_id, format_job(j))
+                j.level = classify_level(j.title)
+                tg.send(chat_id, format_job(j, tracks))
                 time.sleep(cfg.get("send_delay", 1.2))
-
-
-def matches_subscriber(job: Job, sub: dict) -> bool:
-    hay = job.haystack()
-    kws = sub.get("keywords") or []
-    locs = sub.get("locations") or []
-    if kws and not any(k in hay for k in kws):
-        return False
-    if locs and not any(l in job.location.lower() or l in hay for l in locs):
-        return False
-    return True
 
 
 # ---------------------------------------------------------------------------
@@ -272,32 +351,31 @@ def matches_subscriber(job: Job, sub: dict) -> bool:
 # ---------------------------------------------------------------------------
 
 def run_once(tg: Telegram, store: Store, cfg: dict, channel: str | None) -> int:
-    log("Fetching…")
+    log("Fetching...")
     jobs = collect(cfg)
     log(f"{len(jobs)} unique jobs collected")
 
-    fresh = [
-        j for j in jobs
-        if store.is_new(j.id) and passes_filters(j, cfg.get("filters") or {})
-    ]
-    log(f"{len(fresh)} new after dedup + filters")
+    tracks = cfg.get("tracks") or {}
+    fresh = [j for j in jobs if store.is_new(j.id) and passes_filters(j, cfg)]
+
+    by_track = {}
+    for j in fresh:
+        by_track[j.track] = by_track.get(j.track, 0) + 1
+    log(f"{len(fresh)} new after dedup + filters {by_track or ''}")
 
     cap = cfg.get("max_posts_per_run", 25)
     delay = cfg.get("send_delay", 1.2)
     posted = 0
-
     channel_ok = True
 
     for job in fresh[:cap]:
-        text = format_job(job)
+        text = format_job(job, tracks)
         delivered = False
 
         if channel and channel_ok:
             if tg.send(channel, text) is None:
-                # Almost always a bad CHANNEL_ID or the bot isn't an admin.
-                # Stop hammering it for the rest of this run.
                 channel_ok = False
-                log("  ! channel send failed — check CHANNEL_ID and that "
+                log("  ! channel send failed - check CHANNEL_ID and that "
                     "the bot is an admin with Post Messages")
             else:
                 delivered = True
@@ -309,17 +387,15 @@ def run_once(tg: Telegram, store: Store, cfg: dict, channel: str | None) -> int:
                     delivered = True
                 time.sleep(delay)
 
-        # Only burn the job id once it actually reached someone. Otherwise a
-        # misconfigured run would silently swallow every job it found.
+        # Only burn the job id once it actually reached someone.
         if delivered:
             store.mark_seen(job.id)
             posted += 1
 
     if not channel_ok:
-        log("Delivery failed — those jobs were NOT marked seen, "
-            "so they'll be retried on the next run.")
+        log("Delivery failed - those jobs were NOT marked seen, "
+            "so they will be retried on the next run.")
 
-    # Mark the overflow as seen, otherwise the next run posts stale jobs.
     for job in fresh[cap:]:
         store.mark_seen(job.id)
 
@@ -334,10 +410,10 @@ def main() -> None:
     cfg = load_config()
 
     if mode == "test":
-        for j in collect(cfg)[:15]:
-            ok = "✓" if passes_filters(j, cfg.get("filters") or {}) else "✗"
-            print(f"{ok} [{j.source}] {j.title} — {j.company} — {j.location} — {j.age_text()}")
-            print(f"   {j.url}")
+        for j in collect(cfg)[:25]:
+            ok = "OK  " if passes_filters(j, cfg) else "drop"
+            print(f"{ok} [{j.track}/{j.level}] {j.title} - {j.company} "
+                  f"- {j.location} - {j.age_text()}")
         return
 
     token = os.environ.get("BOT_TOKEN")
@@ -357,7 +433,7 @@ def main() -> None:
             handle_commands(tg, store, cfg)
             run_once(tg, store, cfg, channel)
         finally:
-            store.save()          # always persist, even on a crash
+            store.save()
         return
 
     if mode == "serve":
@@ -376,7 +452,7 @@ def main() -> None:
                 store.save()
                 log("Stopped.")
                 return
-            except Exception as e:                     # keep the bot alive
+            except Exception as e:
                 log(f"!! cycle error: {e}")
                 time.sleep(30)
 
