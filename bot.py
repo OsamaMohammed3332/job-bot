@@ -246,23 +246,23 @@ def _status_text(sub: dict, tracks: dict) -> str:
     )
 
 
-def _toggle(current: list | None, val: str, valid) -> list:
-    """Add or remove one value. 'all' clears the list entirely.
+def _select(current: list | None, val: str, valid) -> list:
+    """Add a value to the selection. Never removes.
 
-    An empty list means "no restriction", so deselecting everything can
-    never leave someone with a silently empty feed.
+    Tapping is ADD-ONLY on purpose. The earlier version toggled, which meant
+    a button reading "✅ Mid-level" removed Mid-level when tapped - the exact
+    opposite of what the label invites you to do. Now the only thing that
+    clears a selection is the explicit "All levels" / "Everything" button,
+    so no tap can ever silently take something away.
+
+    An empty list means "no restriction", so clearing is always safe.
     """
     cur = list(current or [])
     if val == "all":
         return []
-    if val not in valid:
-        return cur
-    if val in cur:
-        cur.remove(val)
-    else:
+    if val in valid and val not in cur:
         cur.append(val)
     return cur
-
 
 def _handle_callback(tg: Telegram, store: Store, cfg: dict, cq: dict) -> None:
     """Old INLINE keyboards from earlier versions still sit in chat history.
@@ -289,7 +289,7 @@ def _handle_callback(tg: Telegram, store: Store, cfg: dict, cq: dict) -> None:
     store.subscribe(chat_id)
     sub = store.subscribers().get(str(chat_id), {})
     valid = set(LEVELS) if field == "levels" else set(tracks)
-    new = _toggle(sub.get(field), val, valid)
+    new = _select(sub.get(field), val, valid)
     store.set_filter(chat_id, field, new)
 
     if field == "levels":
@@ -322,7 +322,7 @@ def _handle_button_text(tg: Telegram, store: Store, cfg: dict,
     store.subscribe(chat_id)
     sub = store.subscribers().get(str(chat_id), {})
     valid = set(LEVELS) if field == "levels" else set(tracks)
-    new = _toggle(sub.get(field), val, valid)
+    new = _select(sub.get(field), val, valid)
     store.set_filter(chat_id, field, new)
 
     if field == "levels":
@@ -378,14 +378,14 @@ def handle_commands(tg: Telegram, store: Store, cfg: dict) -> None:
             store.subscribe(chat_id)
             sub = store.subscribers().get(str(chat_id), {})
             tg.send(chat_id,
-                    "🎯 Which jobs do you want?\n<i>Tap to add ✅, tap again to remove. ✔️ Done when finished.</i>",
+                    "🎯 Which jobs do you want?\n<i>Tap the ones you want. Tap Everything to reset. ✔️ Done when finished.</i>",
                     markup=track_markup(tracks, sub.get("tracks")))
 
         elif cmd == "/level":
             store.subscribe(chat_id)
             sub = store.subscribers().get(str(chat_id), {})
             tg.send(chat_id,
-                    "📊 Which level?\n<i>Tap to add ✅, tap again to remove. Pick more than one, then ✔️ Done.</i>",
+                    "📊 Which level?\n<i>Tap every level you want - you can pick more than one. Tap All levels to reset, then ✔️ Done.</i>",
                     markup=level_markup(sub.get("levels")))
 
         elif cmd == "/status":
