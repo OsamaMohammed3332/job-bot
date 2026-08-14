@@ -38,13 +38,17 @@ from sources import (
 )
 from store import Store
 from tg import (
+    DONE_LABEL,
     HELP,
+    REMOVE_KB,
     WELCOME,
     LEVEL_LABELS,
     Telegram,
+    button_actions,
     format_job,
-    level_keyboard,
-    track_keyboard,
+    level_markup,
+    strip_tick,
+    track_markup,
 )
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -261,38 +265,75 @@ def _toggle(current: list | None, val: str, valid) -> list:
 
 
 def _handle_callback(tg: Telegram, store: Store, cfg: dict, cq: dict) -> None:
+    """Old INLINE keyboards from earlier versions still sit in chat history.
+
+    Inline buttons are no longer sent (they jam: Telegram spins a loader
+    until the bot answers, and this bot only wakes every couple of minutes).
+    We still honour taps on the old ones by routing them through the same
+    toggle logic and replying with a proper reply-keyboard.
+    """
     data = cq.get("data") or ""
-    msg = cq.get("message") or {}
-    chat_id = (msg.get("chat") or {}).get("id")
-    msg_id = msg.get("message_id")
-    tracks = cfg.get("tracks") or {}
+    chat_id = ((cq.get("message") or {}).get("chat") or {}).get("id")
     if not chat_id:
         return
+    tg.answer_callback(cq.get("id", ""))
 
+    if ":" not in data:
+        return
+    kind, val = data.split(":", 1)
+    field = {"level": "levels", "track": "tracks"}.get(kind)
+    if not field:
+        return
+
+    tracks = cfg.get("tracks") or {}
     store.subscribe(chat_id)
     sub = store.subscribers().get(str(chat_id), {})
+    valid = set(LEVELS) if field == "levels" else set(tracks)
+    new = _toggle(sub.get(field), val, valid)
+    store.set_filter(chat_id, field, new)
 
-    if data.startswith("level:"):
-        val = data.split(":", 1)[1]
-        new = _toggle(sub.get("levels"), val, set(LEVELS))
-        store.set_filter(chat_id, "levels", new)
+    if field == "levels":
         summary = ", ".join(LEVEL_LABELS.get(l, l) for l in new) or "all levels"
-        tg.answer_callback(cq["id"], summary)
-        if msg_id:
-            tg.edit_markup(chat_id, msg_id, level_keyboard(new))
-
-    elif data.startswith("track:"):
-        val = data.split(":", 1)[1]
-        new = _toggle(sub.get("tracks"), val, set(tracks))
-        store.set_filter(chat_id, "tracks", new)
+        tg.send(chat_id, f"📊 Levels: <b>{summary}</b>", markup=level_markup(new))
+    else:
         summary = ", ".join(tracks.get(t, {}).get("label", t)
                             for t in new) or "everything"
-        tg.answer_callback(cq["id"], summary)
-        if msg_id:
-            tg.edit_markup(chat_id, msg_id, track_keyboard(tracks, new))
-    else:
-        tg.answer_callback(cq["id"])
+        tg.send(chat_id, f"🎯 Tracks: <b>{summary}</b>",
+                markup=track_markup(tracks, new))
 
+
+def _handle_button_text(tg: Telegram, store: Store, cfg: dict,
+                        chat_id, text: str) -> None:
+    """Handle a tap on a reply-keyboard button (arrives as plain text)."""
+    tracks = cfg.get("tracks") or {}
+    label = strip_tick(text)
+
+    if label == strip_tick(DONE_LABEL):
+        store.subscribe(chat_id)
+        sub = store.subscribers().get(str(chat_id), {})
+        tg.send(chat_id, _status_text(sub, tracks), markup=REMOVE_KB)
+        return
+
+    action = button_actions(tracks).get(label)
+    if not action:
+        return                      # ordinary chatter, ignore
+
+    field, val = action
+    store.subscribe(chat_id)
+    sub = store.subscribers().get(str(chat_id), {})
+    valid = set(LEVELS) if field == "levels" else set(tracks)
+    new = _toggle(sub.get(field), val, valid)
+    store.set_filter(chat_id, field, new)
+
+    if field == "levels":
+        summary = ", ".join(LEVEL_LABELS.get(l, l) for l in new) or "all levels"
+        tg.send(chat_id, f"📊 Levels: <b>{summary}</b>",
+                markup=level_markup(new))
+    else:
+        summary = ", ".join(tracks.get(t, {}).get("label", t)
+                            for t in new) or "everything"
+        tg.send(chat_id, f"🎯 Tracks: <b>{summary}</b>",
+                markup=track_markup(tracks, new))
 
 def handle_commands(tg: Telegram, store: Store, cfg: dict) -> None:
     """Drain pending Telegram updates and respond."""
@@ -308,7 +349,12 @@ def handle_commands(tg: Telegram, store: Store, cfg: dict) -> None:
         msg = u.get("message") or {}
         text = (msg.get("text") or "").strip()
         chat_id = (msg.get("chat") or {}).get("id")
-        if not text or not chat_id or not text.startswith("/"):
+        if not text or not chat_id:
+            continue
+
+        # Reply-keyboard taps arrive as ordinary text messages.
+        if not text.startswith("/"):
+            _handle_button_text(tg, store, cfg, chat_id, text)
             continue
 
         cmd, _, arg = text.partition(" ")
@@ -319,7 +365,7 @@ def handle_commands(tg: Telegram, store: Store, cfg: dict) -> None:
             store.subscribe(chat_id)
             sub = store.subscribers().get(str(chat_id), {})
             tg.send(chat_id, WELCOME,
-                    keyboard=track_keyboard(tracks, sub.get("tracks")))
+                    markup=track_markup(tracks, sub.get("tracks")))
 
         elif cmd == "/help":
             tg.send(chat_id, HELP)
@@ -332,15 +378,15 @@ def handle_commands(tg: Telegram, store: Store, cfg: dict) -> None:
             store.subscribe(chat_id)
             sub = store.subscribers().get(str(chat_id), {})
             tg.send(chat_id,
-                    "🎯 Which jobs do you want?\n<i>Tap to add ✅, tap again to remove.</i>",
-                    keyboard=track_keyboard(tracks, sub.get("tracks")))
+                    "🎯 Which jobs do you want?\n<i>Tap to add ✅, tap again to remove. ✔️ Done when finished.</i>",
+                    markup=track_markup(tracks, sub.get("tracks")))
 
         elif cmd == "/level":
             store.subscribe(chat_id)
             sub = store.subscribers().get(str(chat_id), {})
             tg.send(chat_id,
-                    "📊 Which level?\n<i>Tap to add ✅, tap again to remove. Pick more than one.</i>",
-                    keyboard=level_keyboard(sub.get("levels")))
+                    "📊 Which level?\n<i>Tap to add ✅, tap again to remove. Pick more than one, then ✔️ Done.</i>",
+                    markup=level_markup(sub.get("levels")))
 
         elif cmd == "/status":
             tg.send(chat_id,
