@@ -160,7 +160,10 @@ def button_actions(tracks: dict) -> dict:
 
 def format_job(job, tracks: dict | None = None) -> str:
     e = html.escape
-    label = (tracks or {}).get(job.track, {}).get("label", job.track.title())
+    names = job.tracks or []
+    label = " · ".join(
+        (tracks or {}).get(n, {}).get("label", n.title()) for n in names
+    )
     level = LEVEL_LABELS.get(job.level, job.level.title())
 
     lines = [
@@ -184,7 +187,7 @@ I watch LinkedIn and remote job boards and message you the moment something matc
 
 Pick what you want and you're done:
 
-/track — Flutter, Odoo, or everything
+/track — iOS, Flutter, Odoo, or everything
 /level — Junior, Mid, Senior, or any mix
 
 Buttons appear above your keyboard. Tap every option you want - pick Mid <i>and</i> Senior if that is your range. Tap <b>All levels</b> / <b>Everything</b> to start over, then <b>✔️ Done</b>.
@@ -196,7 +199,7 @@ Right now you're set to receive <b>everything</b>. Tap /track to narrow it down.
 
 HELP = """<b>Job Bot commands</b>
 
-/track — Flutter, Odoo, or everything
+/track — iOS, Flutter, Odoo, or everything
 /level — Junior, Mid, Senior, or any mix
 /status — show your current settings
 /search flutter — search right now
@@ -218,7 +221,7 @@ Selecting nothing means no restriction, so you will never end up with an empty f
 # --------------------------------------------------------------------------
 
 BOT_COMMANDS = [
-    {"command": "track", "description": "Choose Flutter, Odoo or everything"},
+    {"command": "track", "description": "Choose iOS, Flutter, Odoo or everything"},
     {"command": "level", "description": "Choose Junior, Mid, Senior or all"},
     {"command": "status", "description": "Show my current settings"},
     {"command": "search", "description": "Search jobs right now"},
@@ -229,15 +232,15 @@ BOT_COMMANDS = [
 ]
 
 SHORT_DESCRIPTION = (
-    "Flutter and Odoo jobs in Egypt and remote worldwide, minutes after "
-    "they are posted."
+    "iOS, Flutter and Odoo jobs in Egypt and remote worldwide, minutes "
+    "after they are posted."
 )
 
 DESCRIPTION = (
     "I watch LinkedIn and remote job boards around the clock and message you "
     "the moment a matching job appears - usually within minutes of it going "
     "live.\n\n"
-    "Choose your track (Flutter or Odoo) and your level (Junior, Mid, Senior "
-    "or any mix), and you only ever hear about jobs that fit.\n\n"
+    "Choose your track (iOS, Flutter or Odoo) and your level (Junior, Mid, "
+    "Senior or any mix), and you only ever hear about jobs that fit.\n\n"
     "Tap Start to begin."
 )
