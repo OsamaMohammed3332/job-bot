@@ -49,7 +49,7 @@ class Job:
     source: str = "LinkedIn"
     posted_at: datetime | None = None   # when the job went live (UTC)
     tags: list[str] = field(default_factory=list)
-    track: str = ""                     # "flutter" | "odoo" | ...
+    tracks: list[str] = field(default_factory=list)   # a job can suit several
     level: str = ""                     # "junior" | "mid" | "senior"
 
     def age_text(self) -> str:
