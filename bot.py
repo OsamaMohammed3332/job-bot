@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -123,10 +124,22 @@ def passes_global_filters(job: Job, filters: dict) -> bool:
             return False
 
     bad = [w.lower() for w in filters.get("title_must_not_include") or []]
-    if any(w in title for w in bad):
+    if any(_kw_hit(title, w) for w in bad):
         return False
 
     return True
+
+
+def _kw_hit(title: str, word: str) -> bool:
+    """Substring match, except short one-word terms need word boundaries.
+
+    "ios" as a plain substring also matches "studios", "scenarios" and
+    "radios"; "erp" matches "sherpa". Anything short and alphabetic is
+    therefore matched as a whole word instead.
+    """
+    if len(word) <= 4 and word.isalpha():
+        return re.search(rf"(?<![a-z]){re.escape(word)}(?![a-z])", title) is not None
+    return word in title
 
 
 def matches_track(job: Job, track: dict) -> bool:
@@ -142,17 +155,16 @@ def matches_track(job: Job, track: dict) -> bool:
     if not words:
         return True
     title = job.title.lower()
-    return any(w in title for w in words)
+    return any(_kw_hit(title, w) for w in words)
 
 
 def passes_filters(job: Job, cfg: dict) -> bool:
     """Full check: global rules plus the job's own track rules."""
     if not passes_global_filters(job, cfg.get("filters") or {}):
         return False
-    track = (cfg.get("tracks") or {}).get(job.track)
-    if track is None:
-        return False
-    return matches_track(job, track)
+    defined = cfg.get("tracks") or {}
+    return any(name in defined and matches_track(job, defined[name])
+               for name in job.tracks)
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +189,7 @@ def collect(cfg: dict) -> list[Job]:
                 log=log,
             )
             for j in found:
-                j.track = track_name
+                j.tracks = [track_name]
             log(f"  LinkedIn [{track_name}: {kw}] -> {len(found)}")
             jobs.extend(found)
 
@@ -198,23 +210,29 @@ def collect(cfg: dict) -> list[Job]:
         ]
         kept = 0
         for j in fresh:
-            for track_name, track in tracks.items():
-                if matches_track(j, track):
-                    j.track = track_name
-                    jobs.append(j)
-                    kept += 1
-                    break
+            j.tracks = [n for n, t in tracks.items() if matches_track(j, t)]
+            if j.tracks:
+                jobs.append(j)
+                kept += 1
         log(f"  {name} -> {kept} matched (of {len(fresh)} recent)")
 
     # Dedupe by id, then by (title, company) to catch cross-postings.
-    seen_ids, seen_pairs, unique = set(), set(), []
+    # Dedupe, but MERGE tracks rather than discarding them. The same
+    # "Mobile Developer" posting is found by both the Flutter and the iOS
+    # searches; it genuinely belongs to both, and dropping the second hit
+    # would hide it from everyone subscribed to the losing track.
+    by_key, unique = {}, []
     for j in jobs:
         pair = (j.title.lower().strip(), j.company.lower().strip())
-        if j.id in seen_ids or pair in seen_pairs:
+        prev = by_key.get(j.id) or by_key.get(pair)
+        if prev is not None:
+            for t in j.tracks:
+                if t not in prev.tracks:
+                    prev.tracks.append(t)
             continue
-        seen_ids.add(j.id)
-        seen_pairs.add(pair)
         j.level = classify_level(j.title)
+        by_key[j.id] = j
+        by_key[pair] = j
         unique.append(j)
 
     unique.sort(
@@ -231,7 +249,7 @@ def collect(cfg: dict) -> list[Job]:
 def matches_subscriber(job: Job, sub: dict) -> bool:
     """Empty list = no restriction, so a new subscriber gets everything."""
     tracks = sub.get("tracks") or []
-    if tracks and job.track not in tracks:
+    if tracks and not set(job.tracks) & set(tracks):
         return False
 
     levels = sub.get("levels") or []
@@ -446,6 +464,7 @@ def handle_commands(tg: Telegram, store: Store, cfg: dict) -> None:
                 tg.send(chat_id, "No results - try a different word.")
             for j in hits[:10]:
                 j.level = classify_level(j.title)
+                j.tracks = list(tracks)
                 tg.send(chat_id, format_job(j, tracks))
                 time.sleep(cfg.get("send_delay", 1.2))
 
@@ -464,7 +483,8 @@ def run_once(tg: Telegram, store: Store, cfg: dict, channel: str | None) -> int:
 
     by_track = {}
     for j in fresh:
-        by_track[j.track] = by_track.get(j.track, 0) + 1
+        for t in j.tracks:
+            by_track[t] = by_track.get(t, 0) + 1
     log(f"{len(fresh)} new after dedup + filters {by_track or ''}")
 
     cap = cfg.get("max_posts_per_run", 25)
@@ -516,7 +536,7 @@ def main() -> None:
     if mode == "test":
         for j in collect(cfg)[:25]:
             ok = "OK  " if passes_filters(j, cfg) else "drop"
-            print(f"{ok} [{j.track}/{j.level}] {j.title} - {j.company} "
+            print(f"{ok} [{'+'.join(j.tracks)}/{j.level}] {j.title} - {j.company} "
                   f"- {j.location} - {j.age_text()}")
         return
 
