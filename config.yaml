@@ -94,6 +94,52 @@ tracks:
       - اندرويد
       - أندرويد
 
+  ios:
+    label: "iOS / Swift"
+    searches:
+      - { keywords: "ios developer",    geo_id: 106155005 }
+      - { keywords: "ios engineer",     geo_id: 106155005 }
+      - { keywords: "swift developer",  geo_id: 106155005 }
+      - { keywords: "swiftui",          geo_id: 106155005 }
+      - { keywords: "ios swift",        geo_id: 106155005 }
+      # Shared with the Flutter track on purpose. A generic "Mobile
+      # Developer" posting is usually native iOS work in this market, and
+      # a job can now belong to both tracks at once.
+      - { keywords: "mobile developer", geo_id: 106155005 }
+      - { keywords: "mobile engineer",  geo_id: 106155005 }
+
+    title_must_include:
+      - ios
+      - swift
+      - swiftui
+      - uikit
+      - objective-c
+      - objective c
+      - iphone
+      - apple
+
+    title_must_include_linkedin:
+      - ios
+      - swift
+      - swiftui
+      - uikit
+      - objective-c
+      - objective c
+      - iphone
+      - apple
+      - mobile
+      - app developer
+      - application developer
+      - apps engineer
+      # Arabic
+      - مهندس
+      - مطور
+      - برمجيات
+      - تطبيقات
+      - موبايل
+      - ايفون
+      - آيفون
+
   odoo:
     label: "Odoo / ERP"
     searches:
