@@ -180,9 +180,12 @@
     "flutter",
     "odoo"
    ],
-   "levels": []
+   "levels": [
+    "junior",
+    "mid"
+   ]
   }
  },
- "update_offset": 258956285,
+ "update_offset": 258956288,
  "profile_hash": "f499afa446ee37e3"
 }
