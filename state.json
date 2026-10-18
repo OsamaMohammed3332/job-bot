@@ -146,7 +146,9 @@
    "tracks": [
     "odoo"
    ],
-   "levels": []
+   "levels": [
+    "junior"
+   ]
   },
   "1191353758": {
    "keywords": [],
@@ -161,6 +163,6 @@
    ]
   }
  },
- "update_offset": 258956289,
+ "update_offset": 258956291,
  "profile_hash": "f499afa446ee37e3"
 }
