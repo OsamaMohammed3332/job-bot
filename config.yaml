@@ -221,6 +221,28 @@ filters:
   blocked_companies: []
 
 # ------------------------------------------------------------
+# WATCHDOG
+#
+# The bot cannot alert you while it is dead - nothing is running.
+# So instead it notices on the way back up, and separately warns
+# when it is alive but has gone unusually quiet.
+# ------------------------------------------------------------
+watchdog:
+  # Who gets the alerts (your Telegram chat id).
+  owner_chat_id: 1289688077
+
+  # If the bot itself stopped running for longer than this, tell me
+  # the moment it recovers. Normal spacing is 3 minutes.
+  downtime_minutes: 45
+
+  # If the bot IS running but has delivered nothing for this long,
+  # warn me. Egyptian weekends are quiet, so keep this generous.
+  quiet_hours: 12
+
+  # Never repeat the quiet warning more often than this.
+  repeat_hours: 12
+
+# ------------------------------------------------------------
 # EXTRA SOURCES - free public APIs, no key needed.
 # Each result is matched against every track's strict include
 # list; anything matching no track is discarded.
