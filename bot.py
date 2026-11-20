@@ -91,6 +91,59 @@ def sync_profile(tg: Telegram, store: Store) -> None:
     log("Command menu and bot profile updated")
 
 
+def watchdog(tg: Telegram, store: Store, cfg: dict, posted: int) -> None:
+    """Tell the owner when something looks wrong.
+
+    Deliberately modest about what it can do. While the bot is dead -- a
+    GitHub billing lock, Actions outage, dead cron -- nothing of ours is
+    running, so nothing of ours can shout. What this CAN do is notice the
+    gap the instant it comes back, and flag long silences while alive.
+    """
+    wd = cfg.get("watchdog") or {}
+    owner = wd.get("owner_chat_id")
+    if not owner:
+        return
+
+    now = time.time()
+    last_run = store.data.get("last_run_at")
+
+    # 1. Recovery notice: were we away longer than a run interval?
+    if last_run:
+        gap_min = (now - last_run) / 60
+        if gap_min >= wd.get("downtime_minutes", 45):
+            hrs = gap_min / 60
+            span = f"{hrs:.1f} hours" if hrs >= 1 else f"{int(gap_min)} minutes"
+            tg.send(owner,
+                    f"⚠️ <b>I was down for {span}</b> and have just come back.\n"
+                    f"Jobs posted during that window are gone unless they are "
+                    f"still inside the lookback. Check the Actions tab if this "
+                    f"keeps happening.")
+    store.data["last_run_at"] = now
+
+    # 2. Quiet warning: alive, but delivering nothing.
+    if posted:
+        store.data["last_delivery_at"] = now
+    last_delivery = store.data.get("last_delivery_at")
+    if last_delivery is None:
+        store.data["last_delivery_at"] = now      # first run, start the clock
+        return
+
+    quiet_h = (now - last_delivery) / 3600
+    if quiet_h < wd.get("quiet_hours", 12):
+        return
+
+    last_warn = store.data.get("last_quiet_warning_at") or 0
+    if (now - last_warn) / 3600 < wd.get("repeat_hours", 12):
+        return
+
+    tg.send(owner,
+            f"🔕 <b>No jobs delivered in {int(quiet_h)} hours.</b>\n"
+            f"The bot is running fine, so this is probably just a quiet "
+            f"spell (weekends in Egypt are slow). If it carries on well "
+            f"past a working day, something upstream may have changed.")
+    store.data["last_quiet_warning_at"] = now
+
+
 def load_config() -> dict:
     with open(CONFIG_PATH) as f:
         return yaml.safe_load(f)
@@ -556,7 +609,8 @@ def main() -> None:
     if mode == "once":
         try:
             handle_commands(tg, store, cfg)
-            run_once(tg, store, cfg, channel)
+            posted = run_once(tg, store, cfg, channel)
+            watchdog(tg, store, cfg, posted)
         finally:
             store.save()
         return
@@ -569,7 +623,8 @@ def main() -> None:
             try:
                 handle_commands(tg, store, cfg)
                 if time.time() - last_fetch >= interval:
-                    run_once(tg, store, cfg, channel)
+                    posted = run_once(tg, store, cfg, channel)
+                    watchdog(tg, store, cfg, posted)
                     last_fetch = time.time()
                 store.save()
                 time.sleep(3)
